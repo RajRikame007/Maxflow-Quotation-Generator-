@@ -1,0 +1,103 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Quotation History | Maxflow Quotation Generator{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h3 class="fw-bold mb-1"><i class="bi bi-journal-text me-2 text-primary"></i>Quotation History</h3>
+            <p class="text-muted mb-0">Browse, search, edit, and download previously generated quotations.</p>
+        </div>
+        <div>
+            <a href="{% url 'quotation_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i> Create New Quotation
+            </a>
+        </div>
+    </div>
+
+    <!-- Search Box -->
+    <div class="col-12">
+        <div class="card p-3 shadow-sm">
+            <form method="get" action="{% url 'quotation_list' %}" class="row g-2">
+                <div class="col-md-10">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by Quotation Number or Customer Name...">
+                    </div>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-secondary">Search</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quotation List Table -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 table-custom">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">#</th>
+                                <th>Quotation / Ref. No.</th>
+                                <th>Customer Name</th>
+                                <th>Date</th>
+                                <th>Items</th>
+                                <th>Grand Total</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for q in quotations %}
+                            <tr>
+                                <td class="ps-3 text-muted">{{ forloop.counter }}</td>
+                                <td class="font-monospace fw-bold text-primary">
+                                    <a href="{% url 'quotation_detail' q.pk %}" class="text-decoration-none">{{ q.quotation_number }}</a>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">{{ q.customer_name }}</div>
+                                    {% if q.customer_phone %}<small class="text-muted">{{ q.customer_phone }}</small>{% endif %}
+                                </td>
+                                <td>{{ q.quotation_date|date:"d M Y" }}</td>
+                                <td><span class="badge bg-light text-dark border">{{ q.items.count }} item(s)</span></td>
+                                <td class="fw-bold text-dark">₹ {{ q.grand_total|floatformat:2 }}</td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'quotation_detail' q.pk %}" class="btn btn-outline-secondary" title="View Preview">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                        <a href="{% url 'quotation_pdf_download' q.pk %}" class="btn btn-outline-danger" title="Download PDF">
+                                            <i class="bi bi-download"></i> PDF
+                                        </a>
+                                        <a href="{% url 'quotation_edit' q.pk %}" class="btn btn-outline-primary" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{% url 'quotation_delete' q.pk %}" class="btn btn-outline-danger" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                    {% if query %}
+                                        No quotations found matching "<strong>{{ query }}</strong>".
+                                    {% else %}
+                                        No quotations recorded yet.
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

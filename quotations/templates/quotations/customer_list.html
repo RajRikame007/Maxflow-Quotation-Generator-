@@ -1,0 +1,549 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Customers Master Directory | Maxflow Controls{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-5">
+        <h3 class="fw-bold mb-1"><i class="bi bi-people-fill me-2 text-primary"></i>Customer / Client Directory</h3>
+        <p class="text-muted mb-0">
+            Database of all clients. Edits and new entries save directly into <code>customer address raj.xlsx</code>.
+        </p>
+    </div>
+    <div class="col-md-7 text-md-end mt-3 mt-md-0 d-flex flex-wrap gap-2 justify-content-md-end">
+        <button type="button" class="btn btn-success fw-semibold" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+            <i class="bi bi-person-plus-fill me-1"></i> Add New Customer
+        </button>
+        <a href="{% url 'customer_export_excel' %}" class="btn btn-outline-success" title="Ensure all database customers are written to Excel">
+            <i class="bi bi-file-earmark-arrow-up me-1"></i> Sync to Excel
+        </a>
+        <a href="{% url 'customer_sync_excel' %}" class="btn btn-outline-secondary" title="Re-read data from customer address raj.xlsx">
+            <i class="bi bi-arrow-repeat me-1"></i> Read from Excel
+        </a>
+        <a href="{% url 'quotation_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i> New Quotation
+        </a>
+    </div>
+</div>
+
+<!-- Floating Notification Alert Container -->
+<div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 1080;"></div>
+
+<!-- Search & Statistics Bar -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by customer name, GSTIN, phone, email, or city/address...">
+                    {% if query %}
+                    <a href="{% url 'customer_list' %}" class="btn btn-outline-secondary">Clear</a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-4 d-flex justify-content-md-end align-items-center gap-2">
+                <button type="submit" class="btn btn-primary px-3">
+                    <i class="bi bi-filter me-1"></i> Filter
+                </button>
+                <span id="customerTotalBadge" data-total="{{ customers|length }}" class="badge bg-secondary py-2 px-3 fs-6">
+                    {{ customers|length }} Customer{{ customers|length|pluralize }}
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Customer Table -->
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover table-custom align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 25%;">Customer / Party Name</th>
+                    <th style="width: 15%;">GSTIN</th>
+                    <th style="width: 15%;">Contact</th>
+                    <th style="width: 25%;">Registered Tally Address</th>
+                    <th style="width: 15%;" class="text-center">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer in customers %}
+                <tr id="customer-row-{{ customer.id }}">
+                    <td class="text-muted small">{{ forloop.counter }}</td>
+                    <td>
+                        <span class="fw-bold text-dark d-block customer-name-text">{{ customer.name }}</span>
+                    </td>
+                    <td>
+                        <span class="customer-gstin-text">
+                        {% if customer.gstin %}
+                            <span class="badge bg-light text-dark font-monospace border">{{ customer.gstin }}</span>
+                        {% else %}
+                            <span class="text-muted small">N/A</span>
+                        {% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="customer-contact-text">
+                        {% if customer.mobile %}
+                            <div><i class="bi bi-telephone me-1 text-muted small"></i><span class="customer-mobile-val">{{ customer.mobile }}</span></div>
+                        {% endif %}
+                        {% if customer.email %}
+                            <div class="text-muted small"><i class="bi bi-envelope me-1"></i><span class="customer-email-val">{{ customer.email }}</span></div>
+                        {% endif %}
+                        {% if not customer.mobile and not customer.email %}
+                            <span class="text-muted small">Nil</span>
+                        {% endif %}
+                        </div>
+                    </td>
+                    <td class="small text-secondary">
+                        <span class="customer-address-text">{{ customer.address|default:"-" }}</span>
+                    </td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" 
+                                    class="btn btn-outline-secondary edit-customer-btn"
+                                    data-id="{{ customer.id }}"
+                                    data-name="{{ customer.name|escape }}"
+                                    data-gstin="{{ customer.gstin|default:''|escape }}"
+                                    data-mobile="{{ customer.mobile|default:''|escape }}"
+                                    data-email="{{ customer.email|default:''|escape }}"
+                                    data-address="{{ customer.address|default:''|escape }}"
+                                    data-update-url="{% url 'customer_edit' customer.id %}"
+                                    title="Edit Customer Master and Excel row">
+                                <i class="bi bi-pencil-square me-1"></i> Edit
+                            </button>
+                            <a href="{% url 'quotation_create' %}?customer_id={{ customer.id }}" class="btn btn-outline-primary" title="Create Quotation for this client">
+                                <i class="bi bi-file-earmark-plus me-1"></i> Quote
+                            </a>
+                            <button type="button" 
+                                    class="btn btn-outline-danger delete-customer-btn"
+                                    data-id="{{ customer.id }}"
+                                    data-name="{{ customer.name|escape }}"
+                                    data-gstin="{{ customer.gstin|default:''|escape }}"
+                                    data-delete-url="{% url 'customer_delete' customer.id %}"
+                                    title="Delete Customer from Master & Excel">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center py-5 text-muted">
+                        <i class="bi bi-building-exclamation fs-1 d-block mb-2 text-secondary"></i>
+                        No customers found matching "{{ query }}".
+                        <div class="mt-2">
+                            <a href="{% url 'customer_sync_excel' %}" class="btn btn-sm btn-success">
+                                <i class="bi bi-arrow-repeat me-1"></i> Sync from Excel File
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div class="modal fade" id="addCustomerModal" tabindex="-1" aria-labelledby="addCustomerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form method="post" action="{% url 'customer_create' %}">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="addCustomerModalLabel">
+                        <i class="bi bi-person-plus-fill me-2"></i>Add New Customer
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        New customer will be saved into the database and written directly into <strong>customer address raj.xlsx</strong>.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Party / Customer Name *</label>
+                            {{ customer_form.name }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Party GSTIN</label>
+                            {{ customer_form.gstin }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Contact / Mobile</label>
+                            {{ customer_form.mobile }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Email Address</label>
+                            {{ customer_form.email }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Registered Tally Address</label>
+                            {{ customer_form.address }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save to Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Customer Master Modal -->
+<div class="modal fade" id="editCustomerModal" tabindex="-1" aria-labelledby="editCustomerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="editCustomerForm" method="post">
+                {% csrf_token %}
+                <input type="hidden" id="edit_customer_id" name="customer_id" value="">
+                
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="editCustomerModalLabel">
+                        <i class="bi bi-pencil-square text-warning me-2"></i>Edit Customer Master
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Updates will directly modify the Customer Master and save to <strong>customer address raj.xlsx</strong> for future use across all quotations.
+                    </div>
+
+                    <div id="editCustomerErrorAlert" class="alert alert-danger py-2 small mb-3 d-none"></div>
+
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Party / Customer Name *</label>
+                            <input type="text" name="name" id="edit_name" class="form-control fw-bold" required placeholder="Party / Customer Name">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Party GSTIN</label>
+                            <input type="text" name="gstin" id="edit_gstin" class="form-control text-uppercase font-monospace" placeholder="e.g. 27AAACT2803M1ZB">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Contact / Mobile</label>
+                            <input type="text" name="mobile" id="edit_mobile" class="form-control" placeholder="e.g. 9820012345">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Email Address</label>
+                            <input type="email" name="email" id="edit_email" class="form-control" placeholder="e.g. purchase@company.com">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Registered Tally Address</label>
+                            <textarea name="address" id="edit_address" class="form-control" rows="3" placeholder="Full Registered Tally Address & Location"></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="saveEditCustomerBtn" class="btn btn-primary fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Customer Confirmation Modal -->
+<div class="modal fade" id="deleteCustomerModal" tabindex="-1" aria-labelledby="deleteCustomerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="deleteCustomerForm" method="post">
+                {% csrf_token %}
+                <input type="hidden" id="delete_customer_id" name="customer_id" value="">
+                
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="deleteCustomerModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Customer Master
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4 text-center">
+                    <p class="mb-2">Are you sure you want to permanently delete this customer?</p>
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <h5 class="fw-bold text-danger mb-1" id="delete_cust_name_display">-</h5>
+                        <div class="text-muted small font-monospace" id="delete_cust_gstin_display">-</div>
+                    </div>
+                    <div class="alert alert-warning py-2 small text-start mb-0">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        This customer will be permanently removed from the database master and deleted from <strong>customer address raj.xlsx</strong>.
+                    </div>
+                </div>
+                
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="confirmDeleteCustomerBtn" class="btn btn-danger fw-bold px-4">
+                        <i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const editModalEl = document.getElementById('editCustomerModal');
+    const editModal = new bootstrap.Modal(editModalEl);
+    const editForm = document.getElementById('editCustomerForm');
+    const errorAlert = document.getElementById('editCustomerErrorAlert');
+    const saveBtn = document.getElementById('saveEditCustomerBtn');
+    let activeCustomerBtn = null;
+
+    const deleteModalEl = document.getElementById('deleteCustomerModal');
+    const deleteModal = new bootstrap.Modal(deleteModalEl);
+    const deleteForm = document.getElementById('deleteCustomerForm');
+    const confirmDeleteBtn = document.getElementById('confirmDeleteCustomerBtn');
+    let activeDeleteRow = null;
+
+    // Toast / notification helper
+    function showNotification(message, type = 'success') {
+        const container = document.getElementById('alertContainer');
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show shadow-lg border-0`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            <i class="bi ${type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.appendChild(alertDiv);
+        setTimeout(() => {
+            alertDiv.classList.remove('show');
+            setTimeout(() => alertDiv.remove(), 300);
+        }, 4500);
+    }
+
+    // Attach click listeners to all Edit buttons
+    function attachEditListeners() {
+        document.querySelectorAll('.edit-customer-btn').forEach(btn => {
+            btn.onclick = function () {
+                activeCustomerBtn = this;
+                const custId = this.dataset.id;
+                const custName = this.dataset.name || '';
+                const custGstin = this.dataset.gstin || '';
+                const custMobile = this.dataset.mobile || '';
+                const custEmail = this.dataset.email || '';
+                const custAddress = this.dataset.address || '';
+                const updateUrl = this.dataset.updateUrl;
+
+                document.getElementById('edit_customer_id').value = custId;
+                document.getElementById('edit_name').value = custName;
+                document.getElementById('edit_gstin').value = custGstin;
+                document.getElementById('edit_mobile').value = custMobile;
+                document.getElementById('edit_email').value = custEmail;
+                document.getElementById('edit_address').value = custAddress;
+
+                editForm.action = updateUrl;
+                errorAlert.classList.add('d-none');
+                errorAlert.textContent = '';
+                
+                editModal.show();
+            };
+        });
+    }
+
+    // Attach click listeners to all Delete buttons
+    function attachDeleteListeners() {
+        document.querySelectorAll('.delete-customer-btn').forEach(btn => {
+            btn.onclick = function () {
+                const custId = this.dataset.id;
+                const custName = this.dataset.name || '';
+                const custGstin = this.dataset.gstin || '';
+                const deleteUrl = this.dataset.deleteUrl;
+
+                activeDeleteRow = document.getElementById(`customer-row-${custId}`);
+
+                document.getElementById('delete_customer_id').value = custId;
+                document.getElementById('delete_cust_name_display').textContent = custName;
+                document.getElementById('delete_cust_gstin_display').textContent = custGstin ? `GSTIN: ${custGstin}` : 'No GSTIN';
+
+                deleteForm.action = deleteUrl;
+                deleteModal.show();
+            };
+        });
+    }
+
+    attachEditListeners();
+    attachDeleteListeners();
+
+    // Handle AJAX form submission
+    editForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving to Master & Excel...';
+        errorAlert.classList.add('d-none');
+
+        const formData = new FormData(editForm);
+        const actionUrl = editForm.action;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => {
+            return response.json().then(data => ({
+                status: response.status,
+                ok: response.ok,
+                data: data
+            }));
+        })
+        .then(res => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel';
+
+            if (res.ok && res.data.success) {
+                const updated = res.data.customer;
+                
+                // Update table row DOM in place
+                if (activeCustomerBtn) {
+                    const rowId = `customer-row-${updated.id}`;
+                    const row = document.getElementById(rowId);
+                    if (row) {
+                        // Update Name
+                        const nameEl = row.querySelector('.customer-name-text');
+                        if (nameEl) nameEl.textContent = updated.name;
+
+                        // Update GSTIN
+                        const gstinEl = row.querySelector('.customer-gstin-text');
+                        if (gstinEl) {
+                            if (updated.gstin) {
+                                gstinEl.innerHTML = `<span class="badge bg-light text-dark font-monospace border">${updated.gstin}</span>`;
+                            } else {
+                                gstinEl.innerHTML = `<span class="text-muted small">N/A</span>`;
+                            }
+                        }
+
+                        // Update Contact
+                        const contactEl = row.querySelector('.customer-contact-text');
+                        if (contactEl) {
+                            let contactHtml = '';
+                            if (updated.mobile) {
+                                contactHtml += `<div><i class="bi bi-telephone me-1 text-muted small"></i><span class="customer-mobile-val">${updated.mobile}</span></div>`;
+                            }
+                            if (updated.email) {
+                                contactHtml += `<div class="text-muted small"><i class="bi bi-envelope me-1"></i><span class="customer-email-val">${updated.email}</span></div>`;
+                            }
+                            if (!updated.mobile && !updated.email) {
+                                contactHtml = `<span class="text-muted small">Nil</span>`;
+                            }
+                            contactEl.innerHTML = contactHtml;
+                        }
+
+                        // Update Address
+                        const addrEl = row.querySelector('.customer-address-text');
+                        if (addrEl) addrEl.textContent = updated.address || '-';
+
+                        // Highlight row briefly
+                        row.classList.add('table-success');
+                        setTimeout(() => row.classList.remove('table-success'), 2000);
+                    }
+
+                    // Update button data attributes for next edit
+                    activeCustomerBtn.dataset.name = updated.name;
+                    activeCustomerBtn.dataset.gstin = updated.gstin;
+                    activeCustomerBtn.dataset.mobile = updated.mobile;
+                    activeCustomerBtn.dataset.email = updated.email;
+                    activeCustomerBtn.dataset.address = updated.address;
+                }
+
+                editModal.hide();
+                showNotification(`Customer '<strong>${updated.name}</strong>' successfully updated in Master & 'customer address raj.xlsx'!`, 'success');
+            } else {
+                let errorMsg = 'Failed to update customer.';
+                if (res.data.errors) {
+                    const errorList = [];
+                    for (const [field, fieldErrors] of Object.entries(res.data.errors)) {
+                        fieldErrors.forEach(err => errorList.push(`${field}: ${err.message}`));
+                    }
+                    errorMsg = errorList.join('<br>') || errorMsg;
+                } else if (res.data.message) {
+                    errorMsg = res.data.message;
+                }
+                errorAlert.innerHTML = errorMsg;
+                errorAlert.classList.remove('d-none');
+            }
+        })
+        .catch(err => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel';
+            errorAlert.textContent = 'Network or server error: ' + err.message;
+            errorAlert.classList.remove('d-none');
+        });
+    });
+
+    // Handle AJAX Delete Customer
+    deleteForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        confirmDeleteBtn.disabled = true;
+        confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting from Master & Excel...';
+
+        const formData = new FormData(deleteForm);
+        const actionUrl = deleteForm.action;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json().then(data => ({ ok: res.ok, data })))
+        .then(res => {
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel';
+
+            if (res.ok && res.data.success) {
+                deleteModal.hide();
+                const name = res.data.name;
+                showNotification(`Customer '<strong>${name}</strong>' successfully deleted from Master & 'customer address raj.xlsx'!`, 'success');
+
+                // Animate and remove row
+                if (activeDeleteRow) {
+                    activeDeleteRow.style.transition = 'opacity 0.4s, transform 0.4s';
+                    activeDeleteRow.style.opacity = '0';
+                    activeDeleteRow.style.transform = 'translateX(-20px)';
+                    setTimeout(() => activeDeleteRow.remove(), 400);
+                }
+
+                // Decrement count badge
+                const badge = document.getElementById('customerTotalBadge');
+                if (badge) {
+                    let total = parseInt(badge.dataset.total || '0') - 1;
+                    if (total < 0) total = 0;
+                    badge.dataset.total = total;
+                    badge.textContent = `${total} Customer${total === 1 ? '' : 's'}`;
+                }
+            } else {
+                alert('Could not delete customer: ' + (res.data.message || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel';
+            alert('Network error while deleting customer: ' + err.message);
+        });
+    });
+});
+</script>
+{% endblock %}

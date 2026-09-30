@@ -1,0 +1,650 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Products Catalog & Item Master | Maxflow Controls{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-6">
+        <h3 class="fw-bold mb-1"><i class="bi bi-box-seam-fill me-2 text-primary"></i>Product Catalog & Description of Items</h3>
+        <p class="text-muted mb-0">
+            Database of all stock items. New products, edits, and deletions sync directly with <code>Product List.xlsx</code>.
+        </p>
+    </div>
+    <div class="col-md-6 text-md-end mt-3 mt-md-0 d-flex flex-wrap gap-2 justify-content-md-end">
+        <button type="button" class="btn btn-success fw-semibold" data-bs-toggle="modal" data-bs-target="#addProductModal">
+            <i class="bi bi-plus-circle me-1"></i> Add New Product
+        </button>
+        <a href="{% url 'product_export_excel' %}" class="btn btn-outline-success" title="Ensure all database products are written to Excel">
+            <i class="bi bi-file-earmark-arrow-up me-1"></i> Sync to Excel
+        </a>
+        <a href="{% url 'product_sync_excel' %}" class="btn btn-outline-secondary" title="Re-sync data from Product List.xlsx">
+            <i class="bi bi-arrow-repeat me-1"></i> Re-read from Excel
+        </a>
+        <a href="{% url 'quotation_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i> New Quotation
+        </a>
+    </div>
+</div>
+
+<!-- Floating Notification Alert Container -->
+<div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 1080;"></div>
+
+<!-- Datalist for Brand Auto-completion -->
+<datalist id="brands-datalist">
+    {% for b in brands %}
+    <option value="{{ b }}">{{ b }}</option>
+    {% endfor %}
+</datalist>
+
+<!-- Search & Brand Filter Bar -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search code (e.g. v21051a or V210-5), brand, or description (hyphens/spaces ignored)...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="brand" class="form-select" onchange="this.form.submit()">
+                    <option value="ALL">-- Filter by Brand (All) --</option>
+                    {% for b in brands %}
+                    <option value="{{ b }}" {% if brand_filter == b %}selected{% endif %}>{{ b }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex justify-content-md-end align-items-center gap-2">
+                <button type="submit" class="btn btn-primary px-3">
+                    <i class="bi bi-filter me-1"></i> Search
+                </button>
+                {% if query or brand_filter and brand_filter != 'ALL' %}
+                <a href="{% url 'product_list' %}" class="btn btn-outline-secondary">Reset</a>
+                {% endif %}
+                <span id="productTotalBadge" class="badge bg-secondary py-2 px-3 fs-6" data-total="{{ total_count }}">
+                    {{ total_count }} Item{{ total_count|pluralize }}
+                </span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Product Catalog Table -->
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover table-custom align-middle mb-0" id="productsTable">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 25%;">Stock Item Name / Model Code</th>
+                    <th style="width: 15%;">Brand / Make</th>
+                    <th style="width: 33%;">Detailed Description</th>
+                    <th style="width: 12%;" class="text-end">Unit Rate (₹)</th>
+                    <th style="width: 10%;" class="text-center">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prod in page_obj %}
+                <tr id="product-row-{{ prod.id }}">
+                    <td class="text-muted small">{{ page_obj.start_index|add:forloop.counter0 }}</td>
+                    <td>
+                        <span class="fw-bold font-monospace text-primary d-block product-code-text">{{ prod.model_code }}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border px-2 py-1 product-brand-text">
+                            <i class="bi bi-tag-fill me-1 text-secondary"></i><span class="brand-val">{{ prod.category }}</span>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="product-desc-text text-dark">
+                        {% if prod.description %}
+                            {{ prod.description }}
+                        {% else %}
+                            <span class="text-muted small fst-italic">None</span>
+                        {% endif %}
+                        </span>
+                    </td>
+                    <td class="text-end fw-semibold product-rate-cell">
+                        <span class="product-rate-text">
+                        {% if prod.unit_rate and prod.unit_rate > 0 %}
+                            ₹{{ prod.unit_rate }}
+                        {% else %}
+                            <span class="text-muted small">Quote on Request</span>
+                        {% endif %}
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" 
+                                    class="btn btn-outline-secondary edit-product-btn"
+                                    data-id="{{ prod.id }}"
+                                    data-code="{{ prod.model_code|escape }}"
+                                    data-category="{{ prod.category|escape }}"
+                                    data-description="{{ prod.description|default:''|escape }}"
+                                    data-rate="{{ prod.unit_rate|default:'0.00' }}"
+                                    data-hsn="{{ prod.hsn_code|default:'84136090' }}"
+                                    data-unit="{{ prod.unit|default:'NOS' }}"
+                                    data-gst="{{ prod.gst_rate|default:'18.00' }}"
+                                    data-update-url="{% url 'product_edit' prod.id %}"
+                                    title="Edit Product & Excel">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <button type="button" 
+                                    class="btn btn-outline-danger delete-product-btn"
+                                    data-id="{{ prod.id }}"
+                                    data-code="{{ prod.model_code|escape }}"
+                                    data-category="{{ prod.category|escape }}"
+                                    data-delete-url="{% url 'product_delete' prod.id %}"
+                                    title="Delete Product & Excel Row">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr id="emptyProductsRow">
+                    <td colspan="6" class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                        No products match your search query. Try clearing your filters or <a href="{% url 'product_sync_excel' %}">re-reading from Excel</a>.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer bg-white border-top d-flex justify-content-between align-items-center py-3">
+        <div class="small text-muted">
+            Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ total_count }} products
+        </div>
+        <nav aria-label="Product pagination">
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query }}{% endif %}{% if brand_filter %}&brand={{ brand_filter }}{% endif %}">&laquo; Previous</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">&laquo; Previous</span></li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query }}{% endif %}{% if brand_filter %}&brand={{ brand_filter }}{% endif %}">Next &raquo;</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">Next &raquo;</span></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Product Modal -->
+<div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0">
+            <form id="addProductForm" method="post" action="{% url 'product_create' %}">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="addProductModalLabel">
+                        <i class="bi bi-plus-circle me-2"></i>Add New Product
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        New product will be saved into the database master and appended directly to <strong>Product List.xlsx</strong>.
+                    </div>
+                    <div id="addProductErrorAlert" class="alert alert-danger py-2 small mb-3 d-none"></div>
+
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label fw-semibold">Stock Item Name / Model Code *</label>
+                            {{ product_form.model_code }}
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Brand / Category</label>
+                            {{ product_form.category }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Detailed Description</label>
+                            {{ product_form.description }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit Rate (₹)</label>
+                            {{ product_form.unit_rate }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit</label>
+                            {{ product_form.unit }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">HSN Code</label>
+                            {{ product_form.hsn_code }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">GST Rate (%)</label>
+                            {{ product_form.gst_rate }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="saveAddProductBtn" class="btn btn-success fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save to Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Product Modal -->
+<div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0">
+            <form id="editProductForm" method="post">
+                {% csrf_token %}
+                <input type="hidden" id="edit_product_id" name="product_id" value="">
+                
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="editProductModalLabel">
+                        <i class="bi bi-pencil-square text-warning me-2"></i>Edit Product Master
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Updates will modify the Product Master and directly reflect into <strong>Product List.xlsx</strong>.
+                    </div>
+                    <div id="editProductErrorAlert" class="alert alert-danger py-2 small mb-3 d-none"></div>
+
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label fw-semibold">Stock Item Name / Model Code *</label>
+                            <input type="text" name="model_code" id="edit_prod_model_code" class="form-control fw-bold font-monospace" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Brand / Category</label>
+                            <input type="text" name="category" id="edit_prod_category" class="form-control text-uppercase" list="brands-datalist">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Detailed Description</label>
+                            <textarea name="description" id="edit_prod_description" class="form-control" rows="3"></textarea>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit Rate (₹)</label>
+                            <input type="number" step="0.01" min="0" name="unit_rate" id="edit_prod_unit_rate" class="form-control" placeholder="0.00">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit</label>
+                            <input type="text" name="unit" id="edit_prod_unit" class="form-control text-uppercase" placeholder="NOS">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">HSN Code</label>
+                            <input type="text" name="hsn_code" id="edit_prod_hsn_code" class="form-control" placeholder="84136090">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">GST Rate (%)</label>
+                            <input type="number" step="0.01" min="0" name="gst_rate" id="edit_prod_gst_rate" class="form-control" placeholder="18.00">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="saveEditProductBtn" class="btn btn-primary fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Product Confirmation Modal -->
+<div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="deleteProductForm" method="post">
+                {% csrf_token %}
+                <input type="hidden" id="delete_product_id" name="product_id" value="">
+                
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="deleteProductModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Product
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4 text-center">
+                    <p class="mb-2">Are you sure you want to permanently delete this product?</p>
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <h5 class="fw-bold font-monospace text-danger mb-1" id="delete_prod_code_display">-</h5>
+                        <div class="text-muted small" id="delete_prod_category_display">-</div>
+                    </div>
+                    <div class="alert alert-warning py-2 small text-start mb-0">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        This product will be permanently deleted from the database and removed directly from <strong>Product List.xlsx</strong>.
+                    </div>
+                </div>
+                
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="confirmDeleteProductBtn" class="btn btn-danger fw-bold px-4">
+                        <i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const editModalEl = document.getElementById('editProductModal');
+    const editModal = new bootstrap.Modal(editModalEl);
+    const editForm = document.getElementById('editProductForm');
+    const editErrorAlert = document.getElementById('editProductErrorAlert');
+    const saveEditBtn = document.getElementById('saveEditProductBtn');
+
+    const addModalEl = document.getElementById('addProductModal');
+    const addModal = new bootstrap.Modal(addModalEl);
+    const addForm = document.getElementById('addProductForm');
+    const addErrorAlert = document.getElementById('addProductErrorAlert');
+    const saveAddBtn = document.getElementById('saveAddProductBtn');
+
+    const deleteModalEl = document.getElementById('deleteProductModal');
+    const deleteModal = new bootstrap.Modal(deleteModalEl);
+    const deleteForm = document.getElementById('deleteProductForm');
+    const confirmDeleteBtn = document.getElementById('confirmDeleteProductBtn');
+
+    let activeEditBtn = null;
+    let activeDeleteRow = null;
+
+    // Toast / notification helper
+    function showNotification(message, type = 'success') {
+        const container = document.getElementById('alertContainer');
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show shadow-lg border-0`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            <i class="bi ${type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        container.appendChild(alertDiv);
+        setTimeout(() => {
+            alertDiv.classList.remove('show');
+            setTimeout(() => alertDiv.remove(), 300);
+        }, 4500);
+    }
+
+    // Attach click listeners to all Edit buttons
+    function attachEditListeners() {
+        document.querySelectorAll('.edit-product-btn').forEach(btn => {
+            btn.onclick = function () {
+                activeEditBtn = this;
+                const prodId = this.dataset.id;
+                const prodCode = this.dataset.code || '';
+                const prodCategory = this.dataset.category || '';
+                const prodDesc = this.dataset.description || '';
+                const prodRate = this.dataset.rate || '0.00';
+                const prodUnit = this.dataset.unit || 'NOS';
+                const prodHsn = this.dataset.hsn || '84136090';
+                const prodGst = this.dataset.gst || '18.00';
+                const updateUrl = this.dataset.updateUrl;
+
+                document.getElementById('edit_product_id').value = prodId;
+                document.getElementById('edit_prod_model_code').value = prodCode;
+                document.getElementById('edit_prod_category').value = prodCategory;
+                document.getElementById('edit_prod_description').value = prodDesc;
+                document.getElementById('edit_prod_unit_rate').value = prodRate;
+                document.getElementById('edit_prod_unit').value = prodUnit;
+                document.getElementById('edit_prod_hsn_code').value = prodHsn;
+                document.getElementById('edit_prod_gst_rate').value = prodGst;
+
+                editForm.action = updateUrl;
+                editErrorAlert.classList.add('d-none');
+                editErrorAlert.textContent = '';
+                
+                editModal.show();
+            };
+        });
+    }
+
+    // Attach click listeners to all Delete buttons
+    function attachDeleteListeners() {
+        document.querySelectorAll('.delete-product-btn').forEach(btn => {
+            btn.onclick = function () {
+                const prodId = this.dataset.id;
+                const prodCode = this.dataset.code || '';
+                const prodCategory = this.dataset.category || '';
+                const deleteUrl = this.dataset.deleteUrl;
+
+                activeDeleteRow = document.getElementById(`product-row-${prodId}`);
+
+                document.getElementById('delete_product_id').value = prodId;
+                document.getElementById('delete_prod_code_display').textContent = prodCode;
+                document.getElementById('delete_prod_category_display').textContent = 'Brand: ' + (prodCategory || 'GENERAL');
+
+                deleteForm.action = deleteUrl;
+                deleteModal.show();
+            };
+        });
+    }
+
+    attachEditListeners();
+    attachDeleteListeners();
+
+    // 1. Handle Add Product AJAX
+    addForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        saveAddBtn.disabled = true;
+        saveAddBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving to Master & Excel...';
+        addErrorAlert.classList.add('d-none');
+
+        const formData = new FormData(addForm);
+        const actionUrl = addForm.action;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json().then(data => ({ ok: res.ok, data })))
+        .then(res => {
+            saveAddBtn.disabled = false;
+            saveAddBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save to Master & Excel';
+
+            if (res.ok && res.data.success) {
+                const p = res.data.product;
+                addModal.hide();
+                addForm.reset();
+                showNotification(`Product '<strong>${p.model_code}</strong>' successfully added to Master & 'Product List.xlsx'!`, 'success');
+
+                // Reload smoothly or insert row
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                let errorMsg = 'Failed to add product.';
+                if (res.data.errors) {
+                    const errorList = [];
+                    for (const [field, fieldErrors] of Object.entries(res.data.errors)) {
+                        fieldErrors.forEach(err => errorList.push(`${field}: ${err.message}`));
+                    }
+                    errorMsg = errorList.join('<br>') || errorMsg;
+                } else if (res.data.message) {
+                    errorMsg = res.data.message;
+                }
+                addErrorAlert.innerHTML = errorMsg;
+                addErrorAlert.classList.remove('d-none');
+            }
+        })
+        .catch(err => {
+            saveAddBtn.disabled = false;
+            saveAddBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save to Master & Excel';
+            addErrorAlert.textContent = 'Network or server error: ' + err.message;
+            addErrorAlert.classList.remove('d-none');
+        });
+    });
+
+    // 2. Handle Edit Product AJAX
+    editForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        saveEditBtn.disabled = true;
+        saveEditBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Updating in Master & Excel...';
+        editErrorAlert.classList.add('d-none');
+
+        const formData = new FormData(editForm);
+        const actionUrl = editForm.action;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json().then(data => ({ ok: res.ok, data })))
+        .then(res => {
+            saveEditBtn.disabled = false;
+            saveEditBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel';
+
+            if (res.ok && res.data.success) {
+                const updated = res.data.product;
+
+                if (activeEditBtn) {
+                    const rowId = `product-row-${updated.id}`;
+                    const row = document.getElementById(rowId);
+                    if (row) {
+                        // Update Code
+                        const codeEl = row.querySelector('.product-code-text');
+                        if (codeEl) codeEl.textContent = updated.model_code;
+
+                        // Update Brand
+                        const brandVal = row.querySelector('.brand-val');
+                        if (brandVal) brandVal.textContent = updated.category || 'GENERAL';
+
+                        // Update Description
+                        const descEl = row.querySelector('.product-desc-text');
+                        if (descEl) descEl.textContent = updated.description || 'None';
+
+                        // Update Rate
+                        const rateEl = row.querySelector('.product-rate-text');
+                        if (rateEl) {
+                            const r = parseFloat(updated.unit_rate);
+                            rateEl.textContent = r > 0 ? `₹${updated.unit_rate}` : 'Quote on Request';
+                        }
+
+                        // Highlight row briefly
+                        row.classList.add('table-success');
+                        setTimeout(() => row.classList.remove('table-success'), 2000);
+                    }
+
+                    // Update button data attributes
+                    activeEditBtn.dataset.code = updated.model_code;
+                    activeEditBtn.dataset.category = updated.category;
+                    activeEditBtn.dataset.description = updated.description;
+                    activeEditBtn.dataset.rate = updated.unit_rate;
+                    activeEditBtn.dataset.unit = updated.unit || 'NOS';
+                    activeEditBtn.dataset.hsn = updated.hsn_code;
+                    activeEditBtn.dataset.gst = updated.gst_rate;
+                }
+
+                editModal.hide();
+                showNotification(`Product '<strong>${updated.model_code}</strong>' successfully updated in Master & 'Product List.xlsx'!`, 'success');
+            } else {
+                let errorMsg = 'Failed to update product.';
+                if (res.data.errors) {
+                    const errorList = [];
+                    for (const [field, fieldErrors] of Object.entries(res.data.errors)) {
+                        fieldErrors.forEach(err => errorList.push(`${field}: ${err.message}`));
+                    }
+                    errorMsg = errorList.join('<br>') || errorMsg;
+                } else if (res.data.message) {
+                    errorMsg = res.data.message;
+                }
+                editErrorAlert.innerHTML = errorMsg;
+                editErrorAlert.classList.remove('d-none');
+            }
+        })
+        .catch(err => {
+            saveEditBtn.disabled = false;
+            saveEditBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Changes to Master & Excel';
+            editErrorAlert.textContent = 'Network or server error: ' + err.message;
+            editErrorAlert.classList.remove('d-none');
+        });
+    });
+
+    // 3. Handle Delete Product AJAX
+    deleteForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        confirmDeleteBtn.disabled = true;
+        confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting from Master & Excel...';
+
+        const formData = new FormData(deleteForm);
+        const actionUrl = deleteForm.action;
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json().then(data => ({ ok: res.ok, data })))
+        .then(res => {
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel';
+
+            if (res.ok && res.data.success) {
+                deleteModal.hide();
+                const code = res.data.model_code;
+                showNotification(`Product '<strong>${code}</strong>' successfully deleted from Master & 'Product List.xlsx'!`, 'success');
+
+                // Animate and remove row
+                if (activeDeleteRow) {
+                    activeDeleteRow.style.transition = 'opacity 0.4s, transform 0.4s';
+                    activeDeleteRow.style.opacity = '0';
+                    activeDeleteRow.style.transform = 'translateX(-20px)';
+                    setTimeout(() => activeDeleteRow.remove(), 400);
+                }
+
+                // Decrement count badge
+                const badge = document.getElementById('productTotalBadge');
+                if (badge) {
+                    let total = parseInt(badge.dataset.total || '0') - 1;
+                    if (total < 0) total = 0;
+                    badge.dataset.total = total;
+                    badge.textContent = `${total} Item${total === 1 ? '' : 's'}`;
+                }
+            } else {
+                alert('Could not delete product: ' + (res.data.message || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel';
+            alert('Network error while deleting product: ' + err.message);
+        });
+    });
+});
+</script>
+{% endblock %}

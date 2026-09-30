@@ -1,0 +1,1418 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}{{ title }} | Maxflow Quotation Generator{% endblock %}
+
+{% block extra_css %}
+<style>
+    .section-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #1e293b;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .form-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 0.25rem;
+    }
+    .item-row {
+        background-color: #ffffff;
+        transition: background 0.15s ease-in-out;
+    }
+    .item-row:hover {
+        background-color: #f8fafc;
+    }
+    .item-gst {
+        min-width: 65px;
+        text-align: center;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-12">
+        <form method="post" id="quotation-form" novalidate>
+            {% csrf_token %}
+
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                <div>
+                    <h3 class="fw-bold mb-1"><i class="bi bi-pencil-square me-2 text-primary"></i>{{ title }}</h3>
+                    <p class="text-muted mb-0">Fill in the fields below. Totals and item amounts calculate automatically.</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{% if quotation %}{% url 'quotation_detail' quotation.pk %}{% else %}{% url 'quotation_list' %}{% endif %}" class="btn btn-outline-secondary">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary px-4 fw-semibold">
+                        <i class="bi bi-check2-circle me-1"></i> Save Quotation
+                    </button>
+                </div>
+            </div>
+
+            <!-- 1. QUOTATION & CUSTOMER DETAILS (2 Columns) -->
+            <div class="row g-3 mb-4">
+                <!-- Quotation Reference Info -->
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="section-title">
+                                <span><i class="bi bi-info-circle me-2 text-primary"></i>Quotation Details</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-7">
+                                    <label class="form-label d-flex justify-content-between align-items-center">
+                                        <span>Quotation / Ref. No. *</span>
+                                        <span class="text-muted small fw-normal">Auto-generated (Editable)</span>
+                                    </label>
+                                    {{ form.quotation_number }}
+                                    {% if form.quotation_number.errors %}<div class="text-danger small">{{ form.quotation_number.errors.0 }}</div>{% endif %}
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label">Date *</label>
+                                    {{ form.quotation_date }}
+                                    {% if form.quotation_date.errors %}<div class="text-danger small">{{ form.quotation_date.errors.0 }}</div>{% endif %}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Salutation</label>
+                                    {{ form.salutation }}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Subject / Opening Line</label>
+                                    {{ form.subject }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Customer Details -->
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="section-title">
+                                <span><i class="bi bi-building me-2 text-primary"></i>Customer / Client Details</span>
+                                <span id="customer-autofill-badge" class="badge bg-success-subtle text-success border border-success-subtle d-none">
+                                    <i class="bi bi-check2-circle me-1"></i>Auto-filled from Master
+                                </span>
+                            </div>
+
+                            <!-- Customer Auto-Fill Selector -->
+                            <div class="bg-light p-2 rounded-3 border mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label text-primary fw-bold small mb-0">
+                                        <i class="bi bi-lightning-charge-fill me-1 text-warning"></i>Auto-Fill from Customer Master:
+                                    </label>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2 fw-semibold" id="edit-selected-customer-btn" style="display:none;" title="Edit selected customer in Master and Excel">
+                                            <i class="bi bi-pencil-square me-1"></i>Edit Master
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalAddCustomerQuotation" title="Add new customer to Excel and auto-fill">
+                                            <i class="bi bi-plus-circle me-1"></i>+ Add New
+                                        </button>
+                                        <a href="{% url 'customer_list' %}" target="_blank" class="small text-decoration-none text-muted" title="View all clients in new tab">
+                                            <i class="bi bi-box-arrow-up-right me-1"></i>Directory
+                                        </a>
+                                        <button type="button" class="btn btn-link btn-sm text-decoration-none text-danger p-0" id="clear-customer-btn" onclick="clearCustomerFields()" title="Clear customer fields">
+                                            <i class="bi bi-x-circle me-1"></i>Clear
+                                        </button>
+                                    </div>
+
+                                </div>
+                                <select class="form-select form-select-sm text-primary fw-semibold" id="customer-quick-select" onchange="autoFillCustomerFromSelect(this)">
+                                    <option value="">⚡ -- Select Customer from Excel ({{ customers|length }}) --</option>
+                                    {% for cust in customers %}
+                                    <option value="{{ cust.name }}" 
+                                            data-id="{{ cust.id }}"
+                                            data-name="{{ cust.name }}" 
+                                            data-address="{{ cust.address|default:'' }}" 
+                                            data-phone="{{ cust.mobile|default:'' }}" 
+                                            data-email="{{ cust.email|default:'' }}" 
+                                            data-gstin="{{ cust.gstin|default:'' }}">
+                                        {{ cust.name }}{% if cust.gstin %} (GST: {{ cust.gstin }}){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <datalist id="customer-name-datalist">
+                                {% for cust in customers %}
+                                <option value="{{ cust.name }}">{{ cust.name }} | {{ cust.address|truncatechars:35 }}</option>
+                                {% endfor %}
+                            </datalist>
+
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label d-flex justify-content-between align-items-center">
+                                        <span>Customer / Company Name *</span>
+                                        <span class="text-muted small fw-normal">Type or pick from list</span>
+                                    </label>
+                                    {{ form.customer_name }}
+                                    {% if form.customer_name.errors %}<div class="text-danger small">{{ form.customer_name.errors.0 }}</div>{% endif %}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Customer Address *</label>
+                                    {{ form.customer_address }}
+                                    {% if form.customer_address.errors %}<div class="text-danger small">{{ form.customer_address.errors.0 }}</div>{% endif %}
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Phone</label>
+                                    {{ form.customer_phone }}
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Email</label>
+                                    {{ form.customer_email }}
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">GSTIN</label>
+                                    {{ form.customer_gstin }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- 2. ITEMS TABLE CARD -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="section-title">
+                        <span><i class="bi bi-list-ol me-2 text-primary"></i>Quotation Items</span>
+                        <button type="button" class="btn btn-sm btn-outline-success" id="add-item-btn">
+                            <i class="bi bi-plus-circle me-1"></i> Add Another Item
+                        </button>
+                    </div>
+
+                    {{ formset.management_form }}
+                    <!-- Datalist for HSN Code Dropdown + Manual Entry -->
+                    <datalist id="hsn-code-list">
+                        <option value="84136090">84136090 (Pumps)</option>
+                        <option value="84812000">84812000 (Valves)</option>
+                        <option value="84818090">84818090</option>
+                        <option value="84819090">84819090</option>
+                        <option value="84138190">84138190</option>
+                        <option value="84139190">84139190</option>
+                        <option value="84122990">84122990</option>
+                        <option value="84129090">84129090</option>
+                        <option value="84122100">84122100</option>
+                        <option value="84129030">84129030</option>
+                        <option value="40092100">40092100</option>
+                        <option value="40092200">40092200</option>
+                        <option value="73079990">73079990</option>
+                        <option value="84212900">84212900</option>
+                        <option value="84219900">84219900</option>
+                        <option value="73144990">73144990</option>
+                        <option value="84849000">84849000</option>
+                        <option value="40169390">40169390</option>
+                        <option value="85437099">85437099</option>
+                    </datalist>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle" id="items-table" style="min-width: 1150px;">
+                            <thead class="table-light">
+                                <tr class="text-center small">
+                                    <th style="width: 4%;">Sr.#</th>
+                                    <th style="width: 28%;">Description of Item *</th>
+                                    <th style="width: 10%;">HSN Code</th>
+                                    <th style="width: 7%;">Qty</th>
+                                    <th style="width: 8%;">Unit</th>
+                                    <th style="width: 11%;">Unit Rate (₹)</th>
+                                    <th style="width: 13%;">Del. Schedule</th>
+                                    <th style="width: 6%;">GST %</th>
+                                    <th style="width: 10%;">Amount (₹)</th>
+                                    <th style="width: 3%;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="items-container">
+                                {% for item_form in formset %}
+                                <tr class="item-row">
+                                    <td>
+                                        {{ item_form.id }}
+                                        {{ item_form.sr_no }}
+                                    </td>
+                                    <td class="position-relative">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <span class="small text-muted fw-semibold" style="font-size: 0.75rem;">
+                                                <i class="bi bi-box-seam text-primary me-1"></i>3,150+ Catalog
+                                            </span>
+                                            <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold btn-search-catalog" style="font-size: 0.74rem;" onclick="openProductSearchModal(this)" title="Search and select from 3,150+ products">
+                                                <i class="bi bi-search me-1"></i>Search & Select
+                                            </button>
+                                        </div>
+                                        <div class="position-relative product-input-wrapper">
+                                            {{ item_form.description }}
+                                            <div class="product-autocomplete-dropdown shadow border rounded-2 bg-white d-none position-absolute w-100" style="z-index: 1060; max-height: 250px; overflow-y: auto; top: 100%; left: 0;"></div>
+                                        </div>
+                                    </td>
+                                    <td>{{ item_form.hsn_code }}</td>
+                                    <td>{{ item_form.quantity }}</td>
+                                    <td>{{ item_form.unit }}</td>
+                                    <td>{{ item_form.unit_rate }}</td>
+                                    <td>{{ item_form.delivery_schedule }}</td>
+                                    <td>{{ item_form.gst_rate }}</td>
+                                    <td>{{ item_form.amount }}</td>
+                                    <td class="text-center">
+                                        {% if formset.can_delete %}
+                                            <div class="d-none">{{ item_form.DELETE }}</div>
+                                        {% endif %}
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Row">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Hidden Empty Template Form for Dynamic Row Addition -->
+                    <table style="display:none;">
+                        <tbody id="empty-item-row">
+                            <tr class="item-row">
+                                <td>
+                                    {{ formset.empty_form.id }}
+                                    {{ formset.empty_form.sr_no }}
+                                </td>
+                                <td class="position-relative">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span class="small text-muted fw-semibold" style="font-size: 0.75rem;">
+                                            <i class="bi bi-box-seam text-primary me-1"></i>3,150+ Catalog
+                                        </span>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold btn-search-catalog" style="font-size: 0.74rem;" onclick="openProductSearchModal(this)" title="Search and select from 3,150+ products">
+                                            <i class="bi bi-search me-1"></i>Search & Select
+                                        </button>
+                                    </div>
+                                    <div class="position-relative product-input-wrapper">
+                                        {{ formset.empty_form.description }}
+                                        <div class="product-autocomplete-dropdown shadow border rounded-2 bg-white d-none position-absolute w-100" style="z-index: 1060; max-height: 250px; overflow-y: auto; top: 100%; left: 0;"></div>
+                                    </div>
+                                </td>
+                                <td>{{ formset.empty_form.hsn_code }}</td>
+                                <td>{{ formset.empty_form.quantity }}</td>
+                                <td>{{ formset.empty_form.unit }}</td>
+                                <td>{{ formset.empty_form.unit_rate }}</td>
+                                <td>{{ formset.empty_form.delivery_schedule }}</td>
+                                <td>{{ formset.empty_form.gst_rate }}</td>
+                                <td>{{ formset.empty_form.amount }}</td>
+                                <td class="text-center">
+                                    {% if formset.can_delete %}
+                                        <div class="d-none">{{ formset.empty_form.DELETE }}</div>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Row">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- 3. FINANCIAL SUMMARY CALCULATIONS (Right Aligned Box) -->
+                    <div class="row justify-content-end mt-3">
+                        <div class="col-md-6 col-lg-5">
+                            <div class="card bg-light border p-3 shadow-sm">
+                                <div class="fw-bold text-dark border-bottom pb-2 mb-2 small text-uppercase">
+                                    <i class="bi bi-calculator me-1 text-primary"></i>Financial Calculation Summary
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 fw-semibold text-secondary">Subtotal (₹):</label>
+                                    <div style="width: 55%;">{{ form.subtotal }}</div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 text-secondary">Discount (%):</label>
+                                    <div style="width: 55%;">
+                                        <div class="input-group input-group-sm">
+                                            {{ form.discount_percentage }}
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-none">
+                                    {{ form.discount_amount }}
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 text-secondary">P &amp; F (%):</label>
+                                    <div style="width: 55%;">
+                                        <div class="input-group input-group-sm">
+                                            {{ form.pf_percentage }}
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-none">
+                                    {{ form.pf_amount }}
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 text-secondary">Freight (₹):</label>
+                                    <div style="width: 55%;">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">₹</span>
+                                            {{ form.freight_amount }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 text-secondary small">Taxable Price (₹):</label>
+                                    <div style="width: 55%;">{{ form.taxable_amount }}</div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0 text-secondary">GST (₹):</label>
+                                    <div style="width: 55%;">{{ form.tax_amount }}</div>
+                                </div>
+                                <hr class="my-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0 fw-bold fs-6 text-primary">Grand Total (₹):</label>
+                                    <div style="width: 55%;">{{ form.grand_total }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                </div>
+            </div>
+
+            <!-- 4. TERMS & CONDITIONS -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <div class="section-title">
+                        <span><i class="bi bi-card-checklist me-2 text-primary"></i>Commercial Terms & Conditions</span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Prices Terms</span>
+                                <span class="text-muted small fw-normal">Select or type</span>
+                            </label>
+                            <select class="form-select form-select-sm mb-2 text-primary fw-semibold" id="price-terms-preset" onchange="if(this.value && this.value !== 'custom') { document.getElementById('id_price_terms').value = this.value; }">
+                                <option value="" selected>-- Select Price Term --</option>
+                                <option value="EX OUR STORES">EX OUR STORES</option>
+                                <option value="F.O.R., UPTO GODOWN">F.O.R., UPTO GODOWN</option>
+                                <option value="F.O.R., UPTO TRANSPORT CENTER">F.O.R., UPTO TRANSPORT CENTER</option>
+                                <option value="F.O.R., DESTINATION">F.O.R., DESTINATION</option>
+                                <option value="custom">Custom (Type manually below)</option>
+                            </select>
+                            {{ form.price_terms }}
+                            <datalist id="price_terms_list">
+                                <option value="EX OUR STORES">
+                                <option value="F.O.R., UPTO GODOWN">
+                                <option value="F.O.R., UPTO TRANSPORT CENTER">
+                                <option value="F.O.R., DESTINATION">
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Discount</label>
+                            {{ form.discount_terms }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Tax Terms</label>
+                            {{ form.tax_terms }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>P & F</span>
+                                <span class="text-muted small fw-normal">Select or type</span>
+                            </label>
+                            <select class="form-select form-select-sm mb-2 text-primary fw-semibold" id="pf-terms-preset" onchange="if(this.value && this.value !== 'custom') { document.getElementById('id_pf_terms').value = this.value; }">
+                                <option value="" selected>-- Select P & F --</option>
+                                <option value="NIL">NIL</option>
+                                <option value="2%">2%</option>
+                                <option value="3%">3%</option>
+                                <option value="EXTRA @ 2%">EXTRA @ 2%</option>
+                                <option value="EXTRA @ 3%">EXTRA @ 3%</option>
+                                <option value="EXTRA AS APPLICABLE">EXTRA AS APPLICABLE</option>
+                                <option value="custom">Custom (Type manually below)</option>
+                            </select>
+                            {{ form.pf_terms }}
+                            <datalist id="pf_terms_list">
+                                <option value="NIL">
+                                <option value="2%">
+                                <option value="3%">
+                                <option value="EXTRA @ 2%">
+                                <option value="EXTRA @ 3%">
+                                <option value="EXTRA AS APPLICABLE">
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Freight</span>
+                                <span class="text-muted small fw-normal">Select or type</span>
+                            </label>
+                            <select class="form-select form-select-sm mb-2 text-primary fw-semibold" id="freight-terms-preset" onchange="if(this.value && this.value !== 'custom') { document.getElementById('id_freight_terms').value = this.value; }">
+                                <option value="" selected>-- Select Freight Term --</option>
+                                <option value="EXTRA TO YOUR ACCOUNT">EXTRA TO YOUR ACCOUNT</option>
+                                <option value="NIL">NIL</option>
+                                <option value="custom">Custom (Type manually below)</option>
+                            </select>
+                            {{ form.freight_terms }}
+                            <datalist id="freight_terms_list">
+                                <option value="EXTRA TO YOUR ACCOUNT">
+                                <option value="NIL">
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Validity</label>
+                            {{ form.validity_terms }}
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Payment Terms</span>
+                                <span class="text-muted small fw-normal">Select or type custom below</span>
+                            </label>
+                            <select class="form-select form-select-sm mb-2 text-primary fw-semibold" id="payment-terms-preset" onchange="if(this.value && this.value !== 'custom') { document.getElementById('id_payment_terms').value = this.value; }">
+                                <option value="" selected>-- Select from standard Payment Terms --</option>
+                                <option value="100% ADVANCE AGAINST PROFORMA INVOICE PRIOR TO DISPATCH.">100% ADVANCE AGAINST PROFORMA INVOICE PRIOR TO DISPATCH.</option>
+                                <option value="50% ADVANCE WITH P.O AND BALANCE AGAINST PROFORMA INVOICE PRIOR TO DISPATCH.">50% ADVANCE WITH P.O AND BALANCE AGAINST PROFORMA INVOICE PRIOR TO DISPATCH.</option>
+                                <option value="100% AGAINST DELIVERY WITHIN 30 DAYS">100% AGAINST DELIVERY WITHIN 30 DAYS</option>
+                                <option value="custom">Custom (Type manually below)</option>
+                            </select>
+                            {{ form.payment_terms }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Special Notes / P.N. Clause</label>
+                            {{ form.special_notes }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. SIGNATORY & COMPANY SETTINGS -->
+            <div class="row g-3 mb-4">
+                <!-- Signatory Info -->
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="section-title">
+                                <span><i class="bi bi-pen me-2 text-primary"></i>Authorized Signatory</span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label">Company Representation Header</label>
+                                    {{ form.signatory_company }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Signatory Name</label>
+                                    {{ form.signatory_name }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Designation</label>
+                                    {{ form.signatory_designation }}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Contact / Cell #</label>
+                                    {{ form.signatory_phone }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Company Details Accordion / Card -->
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="section-title">
+                                <span><i class="bi bi-gear me-2 text-primary"></i>Company Info (Header / Tax)</span>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <label class="form-label">Company Name</label>
+                                    {{ form.company_name }}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Company Address</label>
+                                    {{ form.company_address }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Phone</label>
+                                    {{ form.company_phone }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Email</label>
+                                    {{ form.company_email }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">GSTIN</label>
+                                    {{ form.company_gstin }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Company PAN</label>
+                                    {{ form.company_pan }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Fax</label>
+                                    {{ form.company_fax }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="card shadow-sm p-3 mb-5 text-end">
+                <div>
+                    <a href="{% url 'quotation_list' %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">
+                        <i class="bi bi-save me-2"></i>Save Quotation
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Customer Master Catalog for live search and instant auto-fill
+    window.CUSTOMERS_CATALOG = {
+        {% for cust in customers %}
+        "{{ cust.name|escapejs }}": {
+            name: "{{ cust.name|escapejs }}",
+            address: "{{ cust.address|default:''|escapejs }}",
+            phone: "{{ cust.mobile|default:''|escapejs }}",
+            email: "{{ cust.email|default:''|escapejs }}",
+            gstin: "{{ cust.gstin|default:''|escapejs }}"
+        },
+        {% endfor %}
+    };
+
+    function highlightFields(fields) {
+        fields.forEach(el => {
+            if (!el) return;
+            el.style.transition = 'background-color 0.3s, border-color 0.3s';
+            el.style.backgroundColor = '#d1e7dd';
+            el.style.borderColor = '#198754';
+            setTimeout(() => {
+                el.style.backgroundColor = '';
+                el.style.borderColor = '';
+            }, 1400);
+        });
+    }
+
+    function populateCustomerData(name, address, phone, email, gstin) {
+        const nameInput = document.getElementById('id_customer_name');
+        const addrInput = document.getElementById('id_customer_address');
+        const phoneInput = document.getElementById('id_customer_phone');
+        const emailInput = document.getElementById('id_customer_email');
+        const gstinInput = document.getElementById('id_customer_gstin');
+        const badge = document.getElementById('customer-autofill-badge');
+
+        if (nameInput) nameInput.value = name || '';
+        if (addrInput) addrInput.value = address || '';
+        if (phoneInput) phoneInput.value = phone || '';
+        if (emailInput) emailInput.value = email || '';
+        if (gstinInput) gstinInput.value = gstin || '';
+
+        if (badge) {
+            badge.classList.remove('d-none');
+            setTimeout(() => {
+                badge.classList.add('d-none');
+            }, 4000);
+        }
+
+        highlightFields([nameInput, addrInput, phoneInput, emailInput, gstinInput]);
+    }
+
+    function autoFillCustomerFromSelect(selectEl) {
+        if (!selectEl) return;
+        const opt = selectEl.options[selectEl.selectedIndex];
+        const editBtn = document.getElementById('edit-selected-customer-btn');
+        if (!opt || !opt.value) {
+            if (editBtn) editBtn.style.display = 'none';
+            return;
+        }
+
+        const id = opt.getAttribute('data-id');
+        const name = opt.getAttribute('data-name');
+        const address = opt.getAttribute('data-address');
+        const phone = opt.getAttribute('data-phone');
+        const email = opt.getAttribute('data-email');
+        const gstin = opt.getAttribute('data-gstin');
+
+        if (editBtn && id) {
+            editBtn.dataset.id = id;
+            editBtn.dataset.name = name;
+            editBtn.dataset.address = address;
+            editBtn.dataset.phone = phone;
+            editBtn.dataset.email = email;
+            editBtn.dataset.gstin = gstin;
+            editBtn.style.display = 'inline-block';
+        } else if (editBtn) {
+            editBtn.style.display = 'none';
+        }
+
+        populateCustomerData(name, address, phone, email, gstin);
+    }
+
+    function clearCustomerFields() {
+        const nameInput = document.getElementById('id_customer_name');
+        const addrInput = document.getElementById('id_customer_address');
+        const phoneInput = document.getElementById('id_customer_phone');
+        const emailInput = document.getElementById('id_customer_email');
+        const gstinInput = document.getElementById('id_customer_gstin');
+        const selectEl = document.getElementById('customer-quick-select');
+        const badge = document.getElementById('customer-autofill-badge');
+        const editBtn = document.getElementById('edit-selected-customer-btn');
+
+        if (nameInput) nameInput.value = '';
+        if (addrInput) addrInput.value = '';
+        if (phoneInput) phoneInput.value = '';
+        if (emailInput) emailInput.value = '';
+        if (gstinInput) gstinInput.value = '';
+        if (selectEl) selectEl.value = '';
+        if (badge) badge.classList.add('d-none');
+        if (editBtn) editBtn.style.display = 'none';
+    }
+
+    // Helper to safely escape HTML
+    function escapeHtml(text) {
+        if (!text) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // Active item row targeted by the search modal
+    window.ACTIVE_PRODUCT_ROW = null;
+
+    // Open Search & Select Catalog Modal
+    function openProductSearchModal(btn) {
+        const row = btn.closest('.item-row');
+        window.ACTIVE_PRODUCT_ROW = row;
+
+        const modalEl = document.getElementById('modalProductCatalogSearch');
+        if (!modalEl) return;
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+
+        const searchInput = document.getElementById('modal-product-search-input');
+        const descInput = row ? row.querySelector('.item-desc') : null;
+        const currentVal = descInput ? (descInput.value || '').trim() : '';
+
+        if (searchInput) {
+            searchInput.value = currentVal;
+        }
+
+        setTimeout(() => {
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+            runModalProductSearch();
+        }, 300);
+    }
+
+    // Run search in Modal
+    let modalSearchTimeout = null;
+    function runModalProductSearch() {
+        clearTimeout(modalSearchTimeout);
+        const searchInput = document.getElementById('modal-product-search-input');
+        const brandSelect = document.getElementById('modal-brand-filter');
+        const tbody = document.getElementById('modal-products-tbody');
+        const infoText = document.getElementById('modal-search-count-info');
+        const spinner = document.getElementById('modal-search-loading');
+
+        const query = searchInput ? searchInput.value.trim() : '';
+        const brand = brandSelect ? brandSelect.value : 'ALL';
+
+        if (spinner) spinner.classList.remove('d-none');
+
+        fetch(`/api/products/search/?q=${encodeURIComponent(query)}&brand=${encodeURIComponent(brand)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (spinner) spinner.classList.add('d-none');
+                const products = data.products || [];
+
+                if (infoText) {
+                    if (products.length === 0) {
+                        infoText.innerHTML = '<span class="text-danger">No catalog items found matching your criteria.</span>';
+                    } else {
+                        infoText.innerHTML = `Found <strong>${products.length}</strong> matching item${products.length > 1 ? 's' : ''} from 3,150+ Product Master:`;
+                    }
+                }
+
+                if (!tbody) return;
+
+                if (products.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center py-4 text-muted">
+                                <i class="bi bi-search fs-3 d-block mb-2 text-secondary"></i>
+                                No catalog items found for "<strong>${escapeHtml(query)}</strong>".
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                products.forEach(p => {
+                    const jsonPayload = JSON.stringify(p).replace(/"/g, '&quot;');
+                    html += `
+                        <tr>
+                            <td>
+                                <strong class="font-monospace text-primary">${escapeHtml(p.code)}</strong>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark border">${escapeHtml(p.brand)}</span>
+                            </td>
+                            <td class="small text-secondary">
+                                ${p.description ? escapeHtml(p.description) : '<span class="text-muted fst-italic">-</span>'}
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-sm btn-primary py-0 px-2 fw-semibold" 
+                                    data-product="${jsonPayload}"
+                                    onclick="selectModalProductFromBtn(this)">
+                                    <i class="bi bi-check-lg me-1"></i>Select
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            })
+            .catch(err => {
+                if (spinner) spinner.classList.add('d-none');
+                console.error("Modal product search error:", err);
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-danger text-center py-3">Error fetching products.</td></tr>';
+                }
+            });
+    }
+
+    // Modal product button click handler
+    function selectModalProductFromBtn(btn) {
+        try {
+            const raw = btn.getAttribute('data-product');
+            const prod = JSON.parse(raw);
+            if (window.ACTIVE_PRODUCT_ROW) {
+                selectProductIntoRow(window.ACTIVE_PRODUCT_ROW, prod);
+            }
+            const modalEl = document.getElementById('modalProductCatalogSearch');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+        } catch (e) {
+            console.error("Error selecting modal product:", e);
+        }
+    }
+
+    function clearModalProductSearch() {
+        const input = document.getElementById('modal-product-search-input');
+        const brand = document.getElementById('modal-brand-filter');
+        if (input) input.value = '';
+        if (brand) brand.value = 'ALL';
+        runModalProductSearch();
+    }
+
+    // Attach real-time debounced live input listener to modal search
+    const modalSearchInputEl = document.getElementById('modal-product-search-input');
+    if (modalSearchInputEl) {
+        modalSearchInputEl.addEventListener('input', function() {
+            clearTimeout(modalSearchTimeout);
+            modalSearchTimeout = setTimeout(runModalProductSearch, 200);
+        });
+    }
+
+    // Auto-resize textarea to fit multi-line description content
+    function autoResizeTextarea(el) {
+        if (!el || el.tagName !== 'TEXTAREA') return;
+        el.style.height = 'auto';
+        el.style.height = Math.max(52, el.scrollHeight) + 'px';
+    }
+
+    // Core function to inject selected product into a table row and recalculate totals
+    function selectProductIntoRow(row, prod) {
+        if (!row || !prod) return;
+
+        const descInput = row.querySelector('.item-desc');
+        const rateInput = row.querySelector('.item-rate');
+        const hsnInput = row.querySelector('.item-hsn');
+        const unitInput = row.querySelector('.item-unit');
+        const gstInput = row.querySelector('.item-gst');
+        const qtyInput = row.querySelector('.item-qty');
+
+        if (descInput) {
+            descInput.value = prod.display_desc || prod.code;
+            autoResizeTextarea(descInput);
+        }
+        if (rateInput && prod.unit_rate && parseFloat(prod.unit_rate) > 0) {
+            rateInput.value = parseFloat(prod.unit_rate).toFixed(2);
+        }
+        if (hsnInput && prod.hsn) {
+            hsnInput.value = prod.hsn;
+        }
+        if (unitInput && prod.unit) {
+            unitInput.value = prod.unit;
+        }
+        if (gstInput && prod.gst_rate) {
+            gstInput.value = prod.gst_rate;
+        }
+        if (qtyInput && (!qtyInput.value || parseFloat(qtyInput.value) <= 0)) {
+            qtyInput.value = 1;
+        }
+
+        // Green highlight feedback
+        [descInput, rateInput, hsnInput, unitInput, gstInput, qtyInput].forEach(el => {
+            if (!el) return;
+            el.style.transition = 'background-color 0.3s, border-color 0.3s';
+            el.style.backgroundColor = '#d1e7dd';
+            el.style.borderColor = '#198754';
+            setTimeout(() => {
+                el.style.backgroundColor = '';
+                el.style.borderColor = '';
+            }, 1200);
+        });
+
+        // Close dropdown
+        const dropdown = row.querySelector('.product-autocomplete-dropdown');
+        if (dropdown) {
+            dropdown.classList.add('d-none');
+            dropdown.innerHTML = '';
+        }
+
+        // Trigger total calculations
+        if (typeof window.calculateQuotationTotals === 'function') {
+            window.calculateQuotationTotals();
+        } else {
+            const ev = new Event('input', { bubbles: true });
+            if (qtyInput) qtyInput.dispatchEvent(ev);
+            if (rateInput) rateInput.dispatchEvent(ev);
+        }
+    }
+
+    // Allow Enter key in item description to write remaining text on new line
+    document.addEventListener('keydown', function (e) {
+        if (!e.target || !e.target.classList.contains('item-desc')) return;
+        if (e.key === 'Enter') {
+            // Dismiss live autocomplete dropdown so subsequent lines are clearly visible
+            const row = e.target.closest('.item-row');
+            if (row) {
+                const dropdown = row.querySelector('.product-autocomplete-dropdown');
+                if (dropdown) dropdown.classList.add('d-none');
+            }
+            setTimeout(() => {
+                autoResizeTextarea(e.target);
+            }, 0);
+        }
+    });
+
+    // Live Inline Autocomplete for Description of Item
+    let liveAutocompleteTimeout = null;
+    document.addEventListener('input', function (e) {
+        if (!e.target || !e.target.classList.contains('item-desc')) return;
+        const input = e.target;
+        autoResizeTextarea(input);
+
+        const row = input.closest('.item-row');
+        if (!row) return;
+
+        const dropdown = row.querySelector('.product-autocomplete-dropdown');
+        if (!dropdown) return;
+
+        clearTimeout(liveAutocompleteTimeout);
+        const query = (input.value || '').trim();
+
+        if (query.length < 1) {
+            dropdown.classList.add('d-none');
+            dropdown.innerHTML = '';
+            return;
+        }
+
+        liveAutocompleteTimeout = setTimeout(() => {
+            fetch(`/api/products/search/?q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(data => {
+                    const products = data.products || [];
+                    if (products.length === 0) {
+                        dropdown.innerHTML = '<div class="p-2 text-muted small fst-italic">No catalog matches. Type freely for custom item.</div>';
+                        dropdown.classList.remove('d-none');
+                        return;
+                    }
+
+                    let html = '<div class="list-group list-group-flush">';
+                    products.slice(0, 10).forEach(prod => {
+                        const jsonPayload = JSON.stringify(prod).replace(/"/g, '&quot;');
+                        html += `
+                            <button type="button" class="list-group-item list-group-item-action py-2 px-3 border-0 border-bottom text-start product-dropdown-option"
+                                data-product="${jsonPayload}">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="fw-bold font-monospace text-primary">${escapeHtml(prod.code)}</span>
+                                    <span class="badge bg-light text-dark border small">${escapeHtml(prod.brand)}</span>
+                                </div>
+                                ${prod.description ? `<div class="small text-muted text-truncate">${escapeHtml(prod.description)}</div>` : ''}
+                            </button>
+                        `;
+                    });
+                    html += '</div>';
+                    dropdown.innerHTML = html;
+                    dropdown.classList.remove('d-none');
+                })
+                .catch(err => {
+                    console.error("Autocomplete search error:", err);
+                });
+        }, 220);
+    });
+
+    // Handle click on live autocomplete option
+    document.addEventListener('click', function (e) {
+        const optionBtn = e.target.closest('.product-dropdown-option');
+        if (optionBtn) {
+            e.preventDefault();
+            const row = optionBtn.closest('.item-row');
+            if (row) {
+                try {
+                    const prod = JSON.parse(optionBtn.getAttribute('data-product'));
+                    selectProductIntoRow(row, prod);
+                } catch (err) {
+                    console.error("Error parsing product option:", err);
+                }
+            }
+            return;
+        }
+
+        // Close dropdown when clicked outside
+        if (!e.target.closest('.product-input-wrapper')) {
+            document.querySelectorAll('.product-autocomplete-dropdown').forEach(d => {
+                d.classList.add('d-none');
+            });
+        }
+    });
+
+    // Listen on Modal search input for instant search & auto-size description fields
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('textarea.item-desc').forEach(autoResizeTextarea);
+
+        const modalInput = document.getElementById('modal-product-search-input');
+        if (modalInput) {
+            modalInput.addEventListener('input', function () {
+                clearTimeout(modalSearchTimeout);
+                modalSearchTimeout = setTimeout(runModalProductSearch, 250);
+            });
+        }
+    });
+</script>
+<script src="/static/js/quotation_calc.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Sync Price Terms preset
+        const priceInput = document.getElementById('id_price_terms');
+        const pricePreset = document.getElementById('price-terms-preset');
+        if (priceInput && pricePreset) {
+            const currentVal = (priceInput.value || '').trim();
+            for (let option of pricePreset.options) {
+                if (option.value && option.value !== 'custom' && option.value.toLowerCase() === currentVal.toLowerCase()) {
+                    pricePreset.value = option.value;
+                    break;
+                }
+            }
+        }
+
+        // Sync Freight Terms preset
+        const freightInput = document.getElementById('id_freight_terms');
+        const freightPreset = document.getElementById('freight-terms-preset');
+        if (freightInput && freightPreset) {
+            const currentVal = (freightInput.value || '').trim();
+            for (let option of freightPreset.options) {
+                if (option.value && option.value !== 'custom' && option.value.toLowerCase() === currentVal.toLowerCase()) {
+                    freightPreset.value = option.value;
+                    break;
+                }
+            }
+        }
+
+        // Sync P & F Terms preset
+        const pfInput = document.getElementById('id_pf_terms');
+        const pfPreset = document.getElementById('pf-terms-preset');
+        if (pfInput && pfPreset) {
+            const currentVal = (pfInput.value || '').trim();
+            for (let option of pfPreset.options) {
+                if (option.value && option.value !== 'custom' && option.value.toLowerCase() === currentVal.toLowerCase()) {
+                    pfPreset.value = option.value;
+                    break;
+                }
+            }
+        // Auto-match when typing directly into Customer Name input
+        const nameInput = document.getElementById('id_customer_name');
+        if (nameInput) {
+            const handleCustomerMatch = function () {
+                const val = (nameInput.value || '').trim();
+                if (!val) return;
+
+                for (const key in window.CUSTOMERS_CATALOG) {
+                    if (key.toLowerCase() === val.toLowerCase()) {
+                        const data = window.CUSTOMERS_CATALOG[key];
+                        populateCustomerData(data.name, data.address, data.phone, data.email, data.gstin);
+                        const selectEl = document.getElementById('customer-quick-select');
+                        if (selectEl) selectEl.value = key;
+                        break;
+                    }
+                }
+            };
+            nameInput.addEventListener('input', handleCustomerMatch);
+            nameInput.addEventListener('change', handleCustomerMatch);
+        }
+    });
+
+    // Handle AJAX Customer Addition from Quotation Form Modal
+    const addCustForm = document.getElementById('formAddCustomerQuotation');
+    if (addCustForm) {
+        addCustForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const form = this;
+            const formData = new FormData(form);
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+            submitBtn.disabled = true;
+
+            fetch("{% url 'customer_create' %}", {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+
+                if (data.success && data.customer) {
+                    const cust = data.customer;
+
+                    // 1. Update in-memory catalog
+                    window.CUSTOMERS_CATALOG[cust.name] = {
+                        name: cust.name,
+                        address: cust.address,
+                        phone: cust.mobile,
+                        email: cust.email,
+                        gstin: cust.gstin
+                    };
+
+                    // 2. Add to dropdown & select it
+                    const selectEl = document.getElementById('customer-quick-select');
+                    if (selectEl) {
+                        const opt = document.createElement('option');
+                        opt.value = cust.name;
+                        opt.textContent = cust.name + (cust.gstin ? ' (GST: ' + cust.gstin + ')' : '');
+                        opt.setAttribute('data-name', cust.name);
+                        opt.setAttribute('data-address', cust.address);
+                        opt.setAttribute('data-phone', cust.mobile);
+                        opt.setAttribute('data-email', cust.email);
+                        opt.setAttribute('data-gstin', cust.gstin);
+                        selectEl.appendChild(opt);
+                        selectEl.value = cust.name;
+                    }
+
+                    // 3. Add to datalist
+                    const datalistEl = document.getElementById('customer-name-datalist');
+                    if (datalistEl) {
+                        const opt = document.createElement('option');
+                        opt.value = cust.name;
+                        datalistEl.appendChild(opt);
+                    }
+
+                    // 4. Fill form fields immediately
+                    populateCustomerData(cust.name, cust.address, cust.mobile, cust.email, cust.gstin);
+
+                    // 5. Close modal & reset form
+                    const modalEl = document.getElementById('modalAddCustomerQuotation');
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) {
+                        modalInstance.hide();
+                    }
+                    form.reset();
+
+                    alert(data.message);
+                } else {
+                    alert('Could not save customer: ' + JSON.stringify(data.errors || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                alert('Network or server error while adding customer: ' + err);
+            });
+        });
+    }
+
+    // Handle Edit Customer in Quotation Form
+    const editCustomerTriggerBtn = document.getElementById('edit-selected-customer-btn');
+    if (editCustomerTriggerBtn) {
+        editCustomerTriggerBtn.addEventListener('click', function () {
+            const custId = this.dataset.id;
+            if (!custId) return;
+            document.getElementById('edit_q_cust_id').value = custId;
+            document.getElementById('edit_q_cust_name').value = this.dataset.name || '';
+            document.getElementById('edit_q_cust_gstin').value = this.dataset.gstin || '';
+            document.getElementById('edit_q_cust_mobile').value = this.dataset.phone || '';
+            document.getElementById('edit_q_cust_email').value = this.dataset.email || '';
+            document.getElementById('edit_q_cust_address').value = this.dataset.address || '';
+
+            const editModalEl = document.getElementById('modalEditCustomerQuotation');
+            const editModal = new bootstrap.Modal(editModalEl);
+            editModal.show();
+        });
+    }
+
+    const formEditCustomer = document.getElementById('formEditCustomerQuotation');
+    if (formEditCustomer) {
+        formEditCustomer.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const custId = document.getElementById('edit_q_cust_id').value;
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+            submitBtn.disabled = true;
+
+            const formData = new FormData(this);
+            fetch(`/customers/${custId}/edit/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                if (data.success && data.customer) {
+                    const cust = data.customer;
+                    // Update catalog
+                    window.CUSTOMERS_CATALOG[cust.name] = {
+                        name: cust.name,
+                        address: cust.address,
+                        phone: cust.mobile,
+                        email: cust.email,
+                        gstin: cust.gstin
+                    };
+
+                    // Update option in quick select
+                    const selectEl = document.getElementById('customer-quick-select');
+                    if (selectEl) {
+                        for (let i = 0; i < selectEl.options.length; i++) {
+                            const opt = selectEl.options[i];
+                            if (opt.getAttribute('data-id') === String(cust.id)) {
+                                opt.value = cust.name;
+                                opt.textContent = cust.name + (cust.gstin ? ' (GST: ' + cust.gstin + ')' : '');
+                                opt.setAttribute('data-name', cust.name);
+                                opt.setAttribute('data-address', cust.address);
+                                opt.setAttribute('data-phone', cust.mobile);
+                                opt.setAttribute('data-email', cust.email);
+                                opt.setAttribute('data-gstin', cust.gstin);
+                                selectEl.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Update trigger button dataset
+                    if (editCustomerTriggerBtn) {
+                        editCustomerTriggerBtn.dataset.name = cust.name;
+                        editCustomerTriggerBtn.dataset.address = cust.address;
+                        editCustomerTriggerBtn.dataset.phone = cust.mobile;
+                        editCustomerTriggerBtn.dataset.email = cust.email;
+                        editCustomerTriggerBtn.dataset.gstin = cust.gstin;
+                    }
+
+                    // Populate fields
+                    populateCustomerData(cust.name, cust.address, cust.mobile, cust.email, cust.gstin);
+
+                    // Close modal
+                    const modalEl = document.getElementById('modalEditCustomerQuotation');
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+
+                    alert(`Customer '${cust.name}' updated successfully in Master and Excel!`);
+                } else {
+                    alert('Could not update customer: ' + JSON.stringify(data.errors || data.message || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                alert('Network or server error while editing customer: ' + err);
+            });
+        });
+    }
+</script>
+
+<!-- Add Customer Modal in Quotation Form -->
+<div class="modal fade" id="modalAddCustomerQuotation" tabindex="-1" aria-labelledby="modalAddCustomerQuotationLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="formAddCustomerQuotation">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="modalAddCustomerQuotationLabel">
+                        <i class="bi bi-person-plus-fill me-2"></i>Add Customer to Master & Excel
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        This customer will be saved into the database, written into <strong>customer address raj.xlsx</strong>, and immediately populated into this quotation.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Party / Customer Name *</label>
+                            {{ customer_form.name }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Party GSTIN</label>
+                            {{ customer_form.gstin }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Contact / Mobile</label>
+                            {{ customer_form.mobile }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Email Address</label>
+                            {{ customer_form.email }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Registered Tally Address</label>
+                            {{ customer_form.address }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save & Auto-Fill
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Customer Modal in Quotation Form -->
+<div class="modal fade" id="modalEditCustomerQuotation" tabindex="-1" aria-labelledby="modalEditCustomerQuotationLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="formEditCustomerQuotation">
+                {% csrf_token %}
+                <input type="hidden" id="edit_q_cust_id" name="customer_id" value="">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold" id="modalEditCustomerQuotationLabel">
+                        <i class="bi bi-pencil-square text-warning me-2"></i>Edit Customer Master & Excel
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Updates will save to the Customer Master, sync to <strong>customer address raj.xlsx</strong>, and update this quotation.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Party / Customer Name *</label>
+                            <input type="text" name="name" id="edit_q_cust_name" class="form-control fw-bold" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Party GSTIN</label>
+                            <input type="text" name="gstin" id="edit_q_cust_gstin" class="form-control text-uppercase font-monospace">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Contact / Mobile</label>
+                            <input type="text" name="mobile" id="edit_q_cust_mobile" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Email Address</label>
+                            <input type="email" name="email" id="edit_q_cust_email" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Registered Tally Address</label>
+                            <textarea name="address" id="edit_q_cust_address" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save Changes & Update Quotation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Select Product Catalog Modal -->
+<div class="modal fade" id="modalProductCatalogSearch" tabindex="-1" aria-labelledby="modalProductCatalogSearchLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold" id="modalProductCatalogSearchLabel">
+                    <i class="bi bi-search me-2"></i>Search & Select Product Item
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-7">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" id="modal-product-search-input" class="form-control" placeholder="Search item code, brand, or description (e.g. v21051a, V210-5, EATON)..." autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" id="modal-product-clear-btn" onclick="clearModalProductSearch()">Clear</button>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <select id="modal-brand-filter" class="form-select" onchange="runModalProductSearch()">
+                            <option value="ALL">-- All Brands / Categories ({{ brands|length }}) --</option>
+                            {% for b in brands %}
+                            <option value="{{ b }}">{{ b }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                    <span class="small text-muted" id="modal-search-count-info">Type above to search 3,150+ products from Product List.xlsx</span>
+                    <span id="modal-search-loading" class="spinner-border spinner-border-sm text-primary d-none" role="status"></span>
+                </div>
+
+                <div class="table-responsive border rounded" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table table-hover table-sm align-middle mb-0" id="modal-products-table">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 32%;">Item Name / Code</th>
+                                <th style="width: 18%;">Brand</th>
+                                <th style="width: 38%;">Description</th>
+                                <th style="width: 12%;" class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modal-products-tbody">
+                            <!-- Populated dynamically via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <div class="me-auto small text-muted">
+                    <i class="bi bi-lightbulb me-1 text-warning"></i>Tip: Click <strong>"Select"</strong> to fill Description of Item and auto-calculate prices.
+                </div>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

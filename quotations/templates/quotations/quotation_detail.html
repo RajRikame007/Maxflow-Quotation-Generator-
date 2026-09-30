@@ -1,0 +1,305 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Preview Quotation: {{ quotation.quotation_number }} | Maxflow{% endblock %}
+
+{% block extra_css %}
+<style>
+    .quotation-paper {
+        background: #ffffff;
+        border: 1px solid #dcdcdc;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        padding: 45px 50px;
+        min-height: 1000px;
+        font-family: 'Times New Roman', Times, serif, 'Inter', sans-serif;
+        color: #000000;
+    }
+
+    .header-company-name {
+        font-size: 30px;
+        font-weight: bold;
+        font-style: italic;
+        text-align: center;
+        margin-bottom: 6px;
+    }
+
+    .header-address {
+        font-size: 14.5px;
+        text-align: center;
+        margin-bottom: 5px;
+        line-height: 1.4;
+    }
+
+    .header-contacts {
+        font-size: 14px;
+        text-align: center;
+        margin-bottom: 12px;
+        line-height: 1.4;
+    }
+
+    .header-rule {
+        border-top: 1.5px solid #000000;
+        margin: 10px 0 20px 0;
+    }
+
+    .doc-title {
+        text-align: center;
+        font-weight: bold;
+        font-size: 17px;
+        text-decoration: underline;
+        letter-spacing: 1px;
+        margin-bottom: 25px;
+    }
+
+    .ref-bar {
+        display: flex;
+        justify-content: space-between;
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 25px;
+    }
+
+    .recipient-box {
+        font-size: 14px;
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+
+    .salutation {
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    .opening-text {
+        font-size: 13px;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+        line-height: 1.4;
+    }
+
+    .quote-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 25px;
+    }
+
+    .quote-table th,
+    .quote-table td {
+        border: 1px solid #000000;
+        padding: 8px 6px;
+        font-size: 12px;
+        vertical-align: top;
+    }
+
+    .quote-table th {
+        text-align: center;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .terms-section {
+        border: 1px solid #000000;
+        padding: 14px 18px;
+        font-size: 13px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
+
+    .terms-heading {
+        font-weight: bold;
+        text-decoration: underline;
+        margin-bottom: 10px;
+        display: inline-block;
+    }
+
+    .signatory-box {
+        margin-top: 40px;
+        font-size: 14px;
+        font-weight: bold;
+        line-height: 1.6;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <!-- Action Bar -->
+    <div class="col-lg-10 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{% url 'quotation_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Quotations
+        </a>
+        <div class="d-flex gap-2">
+            <a href="{% url 'quotation_edit' quotation.pk %}" class="btn btn-outline-primary">
+                <i class="bi bi-pencil me-1"></i> Edit Quotation
+            </a>
+            <a href="{% url 'quotation_pdf_preview' quotation.pk %}" target="_blank" class="btn btn-outline-info">
+                <i class="bi bi-eye me-1"></i> Open PDF in Tab
+            </a>
+            <a href="{% url 'quotation_pdf_download' quotation.pk %}" class="btn btn-danger">
+                <i class="bi bi-file-earmark-pdf me-1"></i> Download Quotation PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- Printable Quotation Visual Preview (Matches Reference) -->
+    <div class="col-lg-10">
+        <div class="quotation-paper">
+            <!-- Header Section with Upper-Left Logo, Centered Details & Spacer -->
+            <div class="row align-items-center mb-2">
+                <div class="col-md-2 text-start">
+                    <img src="/static/images/logo.png" alt="Maxflow Logo" style="max-height: 70px; width: auto;"
+                        class="img-fluid">
+                </div>
+                <div class="col-md-8 text-center">
+                    <div class="header-company-name">{{ quotation.company_name }}</div>
+                    <div class="header-address">{{ quotation.company_address }}</div>
+                    <div class="header-contacts">
+                        Tel : {{ quotation.company_phone }} &nbsp;|&nbsp; WhatsApp No. : 7977642095 &nbsp;|&nbsp; Email : {{ quotation.company_email }}
+                    </div>
+                </div>
+                <div class="col-md-2"></div>
+            </div>
+
+            <div class="header-rule"></div>
+
+            <div class="doc-title">QUOTATION</div>
+
+            <!-- Reference & Date -->
+            <div class="ref-bar">
+                <div>OUR REF.: {{ quotation.quotation_number }}</div>
+                <div>DATE: {{ quotation.quotation_date|date:"d-m-Y" }}</div>
+            </div>
+
+            <!-- Recipient / Customer Details -->
+            <div class="recipient-box">
+                <div class="fw-bold">TO,</div>
+                <div class="fw-bold">{{ quotation.customer_name }}</div>
+                <div style="white-space: pre-line;">{{ quotation.customer_address }}</div>
+                {% if quotation.customer_gstin %}<div>GSTIN: {{ quotation.customer_gstin }}</div>{% endif %}
+            </div>
+
+            <!-- Salutation & Subject -->
+            <div class="salutation">{{ quotation.salutation }}</div>
+            <div class="opening-text">{{ quotation.subject }}</div>
+
+            <!-- Items Table -->
+            <table class="quote-table">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">SR. #</th>
+                        <th style="width: 38%;">DESCRIPTION OF ITEM</th>
+                        <th style="width: 10%;">HSN CODE</th>
+                        <th style="width: 10%;">QTY.</th>
+                        <th style="width: 11%;">UNIT RATE (RS.)</th>
+                        <th style="width: 12%;">DEL. SCHEDULE</th>
+                        <th style="width: 14%;">AMOUNT (RS.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td class="text-center fw-bold">{{ item.sr_no }}</td>
+                        <td>
+                            <strong>{{ item.description|linebreaksbr }}</strong>
+                        </td>
+                        <td class="text-center">{{ item.hsn_code|default:"-" }}</td>
+                        <td class="text-center text-nowrap">{{ item.quantity|floatformat:0 }} {{ item.unit }}</td>
+                        <td class="text-end">{{ item.unit_rate|floatformat:2 }}</td>
+                        <td class="text-center small">{{ item.delivery_schedule|default:"-" }}</td>
+                        <td class="text-end fw-bold">{{ item.amount|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-3">No items listed.</td>
+                    </tr>
+                    {% endfor %}
+                    <!-- Financial Summary in Table -->
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold text-dark">SUBTOTAL</td>
+                        <td class="text-end fw-bold text-dark">₹ {{ quotation.subtotal|floatformat:2 }}</td>
+                    </tr>
+                    {% if quotation.discount_amount and quotation.discount_amount > 0 %}
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold text-dark">DISCOUNT {% if quotation.discount_percentage %}({{ quotation.discount_percentage }}%){% endif %}</td>
+                        <td class="text-end fw-bold text-dark">- ₹ {{ quotation.discount_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if quotation.pf_amount and quotation.pf_amount > 0 %}
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold text-dark">P &amp; F {% if quotation.pf_percentage %}({{ quotation.pf_percentage }}%){% endif %}</td>
+                        <td class="text-end fw-bold text-dark">+ ₹ {{ quotation.pf_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if quotation.freight_amount and quotation.freight_amount > 0 %}
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold text-dark">FREIGHT</td>
+                        <td class="text-end fw-bold text-dark">+ ₹ {{ quotation.freight_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if quotation.discount_amount or quotation.pf_amount or quotation.freight_amount %}
+                    <tr style="background-color: #fafafa;">
+                        <td colspan="6" class="text-end fw-semibold text-dark" style="font-size: 12px;">TAXABLE BASE AMOUNT</td>
+                        <td class="text-end fw-semibold text-dark" style="font-size: 12px;">₹ {{ quotation.taxable_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td colspan="6" class="text-end fw-bold text-dark">TAX / GST {% if quotation.gst_rates_display %}({{ quotation.gst_rates_display }}){% else %}({{ quotation.tax_terms }}){% endif %}</td>
+                        <td class="text-end fw-bold text-dark">₹ {{ quotation.tax_amount|floatformat:2 }}</td>
+                    </tr>
+                    <tr style="background-color: #f1f5f9;">
+                        <td colspan="6" class="text-end fw-bold text-dark" style="font-size: 13px;">GRAND TOTAL</td>
+                        <td class="text-end fw-bold text-dark" style="font-size: 13px;">₹ {{ quotation.grand_total|floatformat:2 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+
+            {% if quotation.company_gstin %}
+            <div class="fw-bold mt-2 mb-1" style="font-size: 13px;">
+                GSTIN : {{ quotation.company_gstin }}
+            </div>
+            {% endif %}
+            {% if quotation.company_pan %}
+            <div class="fw-bold mb-2" style="font-size: 13px;">
+                PAN : {{ quotation.company_pan }}
+            </div>
+            {% endif %}
+
+            <!-- Terms and Conditions Section -->
+            <div class="terms-section">
+                <div class="terms-heading">TERMS & CONDITIONS</div>
+                <div class="row">
+                    <div class="col-12"><strong>PRICES:</strong> {{ quotation.price_terms }}</div>
+                    <div class="col-12"><strong>DISCOUNT:</strong> {{ quotation.discount_terms }}</div>
+                    <div class="col-12"><strong>TAX:</strong> {{ quotation.tax_terms }}</div>
+                    {% if quotation.pf_terms %}
+                    <div class="col-12"><strong>P & F:</strong> {{ quotation.pf_terms }}</div>
+                    {% endif %}
+                    <div class="col-12"><strong>PAYMENT:</strong> {{ quotation.payment_terms }}</div>
+                    {% if quotation.freight_terms %}
+                    <div class="col-12"><strong>FREIGHT:</strong> {{ quotation.freight_terms }}</div>
+                    {% endif %}
+                    <div class="col-12"><strong>VALIDITY:</strong> {{ quotation.validity_terms }}</div>
+                    {% if quotation.special_notes %}
+                    <div class="col-12 mt-2 fw-bold">
+                        <strong>P.N. :</strong> {{ quotation.special_notes }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Signatory Section -->
+            <div class="signatory-box">
+                <div>FOR {{ quotation.signatory_company }}</div>
+                <div class="my-3">SD.</div>
+                <div>{{ quotation.signatory_name }} – {{ quotation.signatory_designation }}</div>
+                {% if quotation.signatory_phone %}
+                <div>CELL # {{ quotation.signatory_phone }}</div>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

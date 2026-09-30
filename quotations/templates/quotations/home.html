@@ -1,0 +1,124 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Dashboard | Maxflow Quotation Generator{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Welcome Header & Quick Actions -->
+    <div class="col-12">
+        <div class="card bg-primary text-white p-4 shadow-sm border-0" style="background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);">
+            <div class="d-md-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="fw-bold mb-1"><i class="bi bi-file-earmark-check me-2"></i>Maxflow Quotation Generator</h2>
+                    <p class="mb-0 text-white-50">Create professional quotations quickly, calculate GST automatically, and export branded PDFs.</p>
+                </div>
+                <div class="mt-3 mt-md-0">
+                    <a href="{% url 'quotation_create' %}" class="btn btn-light text-primary fw-semibold btn-lg shadow-sm">
+                        <i class="bi bi-plus-lg me-1"></i> Create New Quotation
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+            <div class="d-flex align-items-center">
+                <div class="rounded-circle bg-primary bg-opacity-10 p-3 text-primary me-3 fs-3">
+                    <i class="bi bi-file-text"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1">Total Quotations</h6>
+                    <h3 class="fw-bold mb-0">{{ total_count }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+            <div class="d-flex align-items-center">
+                <div class="rounded-circle bg-success bg-opacity-10 p-3 text-success me-3 fs-3">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1">PDF Engine</h6>
+                    <h5 class="fw-bold mb-0 text-success">Active (xhtml2pdf)</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+            <div class="d-flex align-items-center">
+                <div class="rounded-circle bg-info bg-opacity-10 p-3 text-info me-3 fs-3">
+                    <i class="bi bi-database"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1">Database</h6>
+                    <h5 class="fw-bold mb-0">SQLite Local</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Quotations List -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center py-3">
+                <h5 class="card-title mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Recent Quotations</h5>
+                <a href="{% url 'quotation_list' %}" class="btn btn-outline-primary btn-sm">View All History</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 table-custom">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">Ref. / Quotation No.</th>
+                                <th>Customer Name</th>
+                                <th>Date</th>
+                                <th>Grand Total</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for q in recent_quotations %}
+                            <tr>
+                                <td class="ps-3 font-monospace fw-semibold text-primary">
+                                    <a href="{% url 'quotation_detail' q.pk %}" class="text-decoration-none">{{ q.quotation_number }}</a>
+                                </td>
+                                <td>{{ q.customer_name }}</td>
+                                <td>{{ q.quotation_date|date:"d-m-Y" }}</td>
+                                <td class="fw-bold">₹ {{ q.grand_total|floatformat:2 }}</td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'quotation_detail' q.pk %}" class="btn btn-outline-secondary" title="View Preview">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                        <a href="{% url 'quotation_pdf_download' q.pk %}" class="btn btn-outline-danger" title="Download PDF">
+                                            <i class="bi bi-file-pdf"></i> PDF
+                                        </a>
+                                        <a href="{% url 'quotation_edit' q.pk %}" class="btn btn-outline-primary" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">
+                                    <i class="bi bi-folder2-open fs-1 d-block mb-2"></i>
+                                    No quotations created yet. Click "Create New Quotation" to get started.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Django
+*.log
+local_settings.py
+staticfiles/
+
+# Temp PDFs and outputs
+debug_current.pdf
+debug_quotation.pdf
+test_output.pdf
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

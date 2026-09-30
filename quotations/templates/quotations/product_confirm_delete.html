@@ -1,0 +1,41 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Delete Product: {{ product.model_code }} | Maxflow Controls{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-danger text-white py-3">
+                <h5 class="fw-bold mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Product Deletion
+                </h5>
+            </div>
+            <div class="card-body p-4 text-center">
+                <p class="fs-5 mb-3">
+                    Are you sure you want to permanently delete product:
+                    <strong class="text-danger d-block mt-2">{{ product.model_code }} ({{ product.category }})</strong>
+                </p>
+                {% if product.description %}
+                <p class="text-muted small mb-4">{{ product.description }}</p>
+                {% endif %}
+
+                <div class="alert alert-warning py-2 small text-start mb-4">
+                    <i class="bi bi-info-circle-fill me-1"></i>
+                    This product will be removed from the database master and deleted from <strong>Product List.xlsx</strong>.
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-center gap-3">
+                        <a href="{% url 'product_list' %}" class="btn btn-outline-secondary px-4">Cancel</a>
+                        <button type="submit" class="btn btn-danger fw-bold px-4">
+                            <i class="bi bi-trash-fill me-1"></i> Yes, Delete Product & Excel Row
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

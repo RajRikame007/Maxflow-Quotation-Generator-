@@ -1,0 +1,68 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Sign In | Maxflow Quotation Generator{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center my-4">
+    <div class="col-md-5 col-lg-4">
+        <div class="card shadow border-0">
+            <div class="card-body p-4 p-md-5">
+                <!-- Brand Header -->
+                <div class="text-center mb-4">
+                    <img src="/static/images/logo.png" alt="Maxflow Logo" style="max-height: 65px;" class="mb-3">
+                    <h4 class="fw-bold mb-1">Welcome Back</h4>
+                    <p class="text-muted small">Sign in to create & manage quotations</p>
+                </div>
+
+                <!-- Login Form -->
+                <form method="post">
+                    {% csrf_token %}
+
+                    {% if form.errors %}
+                        <div class="alert alert-danger py-2 small" role="alert">
+                            <i class="bi bi-exclamation-circle-fill me-1"></i> Invalid username or password.
+                        </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Username</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-person"></i></span>
+                            <input type="text" name="username" class="form-control" placeholder="Enter username" required autofocus>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-semibold text-secondary">Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-lock"></i></span>
+                            <input type="password" name="password" class="form-control" placeholder="Enter password" required>
+                        </div>
+                    </div>
+
+                    <div class="d-grid mb-3">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+                        </button>
+                    </div>
+                </form>
+
+                <div class="text-center mt-2 mb-3 small">
+                    <span class="text-muted">Don't have an account?</span>
+                    <a href="{% url 'register' %}" class="fw-bold text-decoration-none ms-1">Create an Account</a>
+                </div>
+
+                <!-- Demo Credentials Helper -->
+                <div class="card bg-light border-0 p-3 mt-4 small">
+                    <div class="fw-bold text-dark mb-1"><i class="bi bi-info-circle me-1 text-primary"></i>Demo User Accounts:</div>
+                    <ul class="mb-0 ps-3 text-muted">
+                        <li><strong>Username:</strong> <code>admin</code> | <strong>Password:</strong> <code>admin123</code> (Dinendra Chari)</li>
+                        <li><strong>Username:</strong> <code>manager</code> | <strong>Password:</strong> <code>manager123</code> (Rajesh Sharma)</li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

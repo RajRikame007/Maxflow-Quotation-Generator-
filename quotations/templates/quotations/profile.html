@@ -1,0 +1,71 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}My Profile & Signatory Details | Maxflow Quotation Generator{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center my-4">
+    <div class="col-md-7 col-lg-6">
+        <div class="card shadow border-0">
+            <div class="card-header bg-primary text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-person-badge me-2"></i>My Profile & Authorized Signatory Details</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted small mb-4">
+                    The details configured here will automatically pre-populate the <strong>Authorized Signatory</strong> section (Signatory Name, Designation, and Contact / Cell #) when you create a new quotation.
+                </p>
+
+                <form method="post" novalidate>
+                    {% csrf_token %}
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-secondary">First Name</label>
+                            <input type="text" name="first_name" class="form-control" value="{{ user.first_name }}" placeholder="First Name">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold text-secondary">Last Name</label>
+                            <input type="text" name="last_name" class="form-control" value="{{ user.last_name }}" placeholder="Last Name">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Username</label>
+                        <input type="text" class="form-control bg-light" value="{{ user.username }}" readonly>
+                        <div class="form-text text-muted" style="font-size: 0.75rem;">Username cannot be changed.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Email Address</label>
+                        <input type="email" name="email" class="form-control" value="{{ user.email }}" placeholder="Email Address">
+                    </div>
+
+                    <hr class="my-4">
+
+                    <h6 class="fw-bold text-primary mb-3"><i class="bi bi-pen me-2"></i>Signatory Info for Quotations</h6>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-secondary">Designation *</label>
+                        <input type="text" name="designation" class="form-control text-uppercase fw-semibold" value="{{ profile.designation }}" placeholder="e.g. MANAGER TECHNICAL" required>
+                        <div class="form-text text-muted" style="font-size: 0.75rem;">Will appear as Signatory Designation on PDF quotations.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-semibold text-secondary">Cell Number / Contact # *</label>
+                        <input type="text" name="phone" class="form-control fw-semibold" value="{{ profile.phone }}" placeholder="e.g. 8928386419 / 9820012345">
+                        <div class="form-text text-muted" style="font-size: 0.75rem;">Will appear as Contact / Cell # on PDF quotations.</div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center pt-2">
+                        <a href="{% url 'quotation_create' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Back to Quotation
+                        </a>
+                        <button type="submit" class="btn btn-primary px-4 fw-bold">
+                            <i class="bi bi-check-circle-fill me-1"></i> Save Profile Details
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
