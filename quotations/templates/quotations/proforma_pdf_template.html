@@ -1,0 +1,417 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Proforma Invoice - {{ proforma.proforma_number }}</title>
+
+    <style>
+        @page {
+            size: a4 portrait;
+            margin-top: 0.8cm;
+            margin-bottom: 0.8cm;
+            margin-left: 1.0cm;
+            margin-right: 1.0cm;
+        }
+
+        body {
+            font-family: 'Times-Roman', 'Times New Roman', Times, serif;
+            color: #000000;
+            font-size: 8.5pt;
+            line-height: 1.25;
+        }
+
+        .header-table {
+            width: 100%;
+            margin-bottom: 3px;
+        }
+
+        .header-title {
+            font-family: 'Times-BoldItalic', 'Times New Roman', Times, serif;
+            font-size: 19pt;
+            font-weight: bold;
+            font-style: italic;
+            color: #000000;
+            text-align: center;
+            margin-bottom: 2px;
+            letter-spacing: 0.3px;
+        }
+
+        .header-address {
+            font-size: 7.8pt;
+            text-align: center;
+            margin-bottom: 2px;
+            line-height: 1.22;
+        }
+
+        .header-contacts {
+            font-size: 7.2pt;
+            text-align: center;
+            margin-bottom: 1px;
+            line-height: 1.22;
+        }
+
+        .header-line {
+            border-bottom: 1.2px solid #000000;
+            margin-top: 3px;
+            margin-bottom: 6px;
+        }
+
+        .doc-title {
+            text-align: center;
+            font-weight: bold;
+            font-size: 11pt;
+            text-decoration: underline;
+            margin-top: 2px;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .meta-table {
+            width: 100%;
+            margin-bottom: 6px;
+        }
+
+        .meta-left {
+            font-weight: bold;
+            font-size: 8.5pt;
+            text-align: left;
+        }
+
+        .meta-right {
+            font-weight: bold;
+            font-size: 8.5pt;
+            text-align: right;
+        }
+
+        .to-section {
+            font-size: 8.5pt;
+            line-height: 1.25;
+            margin-bottom: 5px;
+        }
+
+        .to-title {
+            font-size: 8.5pt;
+            font-weight: bold;
+            margin-bottom: 1px;
+        }
+
+        .attn-line {
+            text-align: center;
+            font-weight: bold;
+            font-size: 8.5pt;
+            text-decoration: underline;
+            margin-top: 3px;
+            margin-bottom: 5px;
+            letter-spacing: 0.3px;
+        }
+
+        .salutation {
+            font-weight: bold;
+            font-size: 8.5pt;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+
+        .ref-note {
+            font-size: 8pt;
+            line-height: 1.25;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            text-align: justify;
+        }
+
+        table.items-table {
+            width: 100%;
+            margin-top: 2px;
+            margin-bottom: 5px;
+            border-collapse: collapse;
+        }
+
+        table.items-table th,
+        table.items-table td {
+            border: 0.8px solid #000000;
+            padding: 3px 4px;
+            font-size: 8pt;
+            vertical-align: middle;
+        }
+
+        table.items-table th {
+            font-weight: bold;
+            text-align: center;
+            background-color: #f2f2f2;
+            font-size: 7.8pt;
+            text-transform: uppercase;
+            padding: 3.5px 2px;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-left {
+            text-align: left;
+        }
+
+        .amount-words {
+            font-weight: bold;
+            font-size: 8pt;
+            margin-top: 4px;
+            margin-bottom: 6px;
+        }
+
+        .bank-table {
+            width: 100%;
+            font-size: 7.5pt;
+            font-weight: bold;
+            line-height: 1.25;
+            margin-bottom: 5px;
+        }
+
+        .bank-table td {
+            padding: 0.5px 0;
+            vertical-align: top;
+        }
+
+        .bank-lbl {
+            width: 24%;
+        }
+
+        .bank-sep {
+            width: 2%;
+            text-align: center;
+        }
+
+        .bank-val {
+            width: 74%;
+        }
+
+        .closing-note {
+            font-size: 7.5pt;
+            font-weight: bold;
+            line-height: 1.2;
+            margin-top: 3px;
+            margin-bottom: 2px;
+        }
+
+        .signatory-box {
+            margin-top: 2px;
+            font-size: 8pt;
+            font-weight: bold;
+            line-height: 1.25;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Company Header Table (13% - 74% - 13% for exact page centering) -->
+    <table class="header-table" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td width="13%" valign="middle" align="left">
+                {% if logo_path %}
+                <img src="{{ logo_path }}" width="80" height="auto" />
+                {% else %}
+                &nbsp;
+                {% endif %}
+            </td>
+            <td width="74%" valign="middle" align="center" style="text-align: center;">
+                <div class="header-title">{{ proforma.company_name }}</div>
+                <div class="header-address">{{ proforma.company_address }}</div>
+                <div class="header-contacts">{{ proforma.company_contact }}</div>
+            </td>
+            <td width="13%" valign="middle" align="right">
+                &nbsp;
+            </td>
+        </tr>
+    </table>
+
+    <div class="header-line"></div>
+
+    <!-- Document Title -->
+    <div class="doc-title">PROFORMA INVOICE</div>
+
+    <!-- Proforma Number and Date -->
+    <table class="meta-table" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="meta-left" width="55%">{{ proforma.proforma_number }}</td>
+            <td class="meta-right" width="45%">DATE: {{ proforma.proforma_date|date:"d.m.Y" }}</td>
+        </tr>
+    </table>
+
+    <!-- Customer Recipient -->
+    <div class="to-section">
+        <div class="to-title">TO,</div>
+        <b>{{ proforma.customer_name }}</b><br>
+        {{ proforma.customer_address|linebreaksbr }}<br>
+        {% if proforma.customer_contact %}Contact No:- {{ proforma.customer_contact }}<br>{% endif %}
+        {% if proforma.customer_gstin %}GST No:- {{ proforma.customer_gstin }}{% endif %}
+    </div>
+
+    <!-- Attention Line -->
+    {% if proforma.attention_to %}
+    <div class="attn-line">KIND ATTN: {{ proforma.attention_to|upper }}</div>
+    {% endif %}
+
+    <!-- Salutation and Reference Line -->
+    <div class="salutation">{{ proforma.salutation|upper }}</div>
+    <div class="ref-note">{{ proforma.formatted_ref_text|upper }}</div>
+
+    <!-- Products & Charges Table -->
+    <table class="items-table" width="100%" cellpadding="0" cellspacing="0">
+        <thead>
+            <tr>
+                <th width="6%" class="text-center">SR.NO.</th>
+                <th width="52%" class="text-center">ITEM DESCRIPTION</th>
+                <th width="10%" class="text-center">QTY.</th>
+                <th width="16%" class="text-center">UNIT RATE</th>
+                <th width="16%" class="text-center">AMOUNT</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="text-center" valign="top">{{ item.sr_no }}</td>
+                <td class="text-left" valign="top">{{ item.description|linebreaksbr }}</td>
+                <td class="text-center" valign="top">{{ item.qty_display }}</td>
+                <td class="text-right" valign="top">{{ item.unit_rate|floatformat:2|intcomma }}</td>
+                <td class="text-right" valign="top">{{ item.amount|floatformat:2|intcomma }}</td>
+            </tr>
+            {% endfor %}
+
+            <!-- Sub-Total (Before Discount) -->
+            {% if proforma.discount_amount and proforma.discount_amount > 0 %}
+            <tr>
+                <td colspan="4" class="text-right"><b>SUB-TOTAL</b></td>
+                <td class="text-right"><b>{{ proforma.subtotal|floatformat:2|intcomma }}</b></td>
+            </tr>
+            <tr>
+                <td colspan="4" class="text-right"><b>{{ proforma.discount_display_label }}</b></td>
+                <td class="text-right"><b>{{ proforma.discount_amount|floatformat:2|intcomma }}</b></td>
+            </tr>
+            <tr>
+                <td colspan="4" class="text-right"><b>SUB-TOTAL</b></td>
+                <td class="text-right"><b>{{ proforma.subtotal_after_discount|floatformat:2|intcomma }}</b></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-right"><b>SUB-TOTAL</b></td>
+                <td class="text-right"><b>{{ proforma.subtotal|floatformat:2|intcomma }}</b></td>
+            </tr>
+            {% endif %}
+
+            <!-- GST Tax Row -->
+            <tr>
+                <td colspan="4" class="text-right"><b>{{ proforma.gst_display_label }}</b></td>
+                <td class="text-right"><b>{{ proforma.tax_amount|floatformat:2|intcomma }}</b></td>
+            </tr>
+
+            <!-- Total Amount Row -->
+            <tr>
+                <td colspan="4" class="text-right"><b>TOTAL</b></td>
+                <td class="text-right"><b>{{ proforma.grand_total|floatformat:2|intcomma }}</b></td>
+            </tr>
+
+            <!-- Rounding Off Total Row -->
+            {% if proforma.round_off_enabled %}
+            <tr>
+                <td colspan="4" class="text-right"><b>ROUNDING OFF TOTAL</b></td>
+                <td class="text-right"><b>{{ proforma.rounded_total|floatformat:2|intcomma }}</b></td>
+            </tr>
+            {% endif %}
+
+            <!-- Advance Received Row (if advance entered) -->
+            {% if proforma.has_advance %}
+            <tr>
+                <td colspan="4" class="text-right"><b>{{ proforma.advance_display_label }}</b></td>
+                <td class="text-right"><b>{{ proforma.advance_amount|floatformat:2|intcomma }}</b></td>
+            </tr>
+            {% endif %}
+
+            <!-- Balance Amount Payable by You (Always at last) -->
+            <tr style="background-color: #f2f2f2;">
+                <td colspan="4" class="text-right" style="font-size: 8.5pt;"><b>BALANCE AMOUNT PAYABLE BY YOU</b></td>
+                <td class="text-right" style="font-size: 8.5pt;"><b>{{ proforma.balance_payable|floatformat:2|intcomma }}</b></td>
+            </tr>
+
+        </tbody>
+    </table>
+
+    <!-- Amount in Words -->
+    <div class="amount-words">
+        AMOUNT (IN WORDS): {{ proforma.amount_in_words|upper }}
+    </div>
+
+    <!-- Bank Details -->
+    <table class="bank-table" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="bank-lbl">BANK NAME</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_name }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl">BRANCH</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_branch }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl" valign="top">ADDRESS</td>
+            <td class="bank-sep" valign="top">:</td>
+            <td class="bank-val" valign="top">- {{ proforma.bank_address|linebreaksbr }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl">TELEPHONE #</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_telephone }}</td>
+        </tr>
+        <tr><td colspan="3" style="height: 3px;"></td></tr>
+        <tr>
+            <td class="bank-lbl">ACCOUNT NAME</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_account_name }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl">ACCOUNT NO.</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_account_no }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl">RTGS/NEFT IFS CODE</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_ifsc }}</td>
+        </tr>
+        <tr>
+            <td class="bank-lbl">MICR CODE</td>
+            <td class="bank-sep">:</td>
+            <td class="bank-val">- {{ proforma.bank_micr }}</td>
+        </tr>
+    </table>
+
+    <!-- Footer Note & Signatory -->
+    {% if proforma.request_note %}
+    <div class="closing-note">{{ proforma.request_note|upper }}</div>
+    {% endif %}
+    <div class="closing-note" style="margin-top: 3px;">THANKING YOU,</div>
+    <div class="closing-note">YOURS TRULY,</div>
+    <div style="font-weight: bold; font-size: 8.5pt; margin-top: 3px;">FOR {{ proforma.signatory_company }}</div>
+
+    <div class="signatory-box">
+        <table cellpadding="0" cellspacing="0" style="border: none; width: 100%;">
+            <tr>
+                <td valign="top" style="border: none; width: 35%;">
+                    {% if stamp_path %}
+                    <img src="{{ stamp_path }}" width="75" height="75" style="margin-top: 2px;" />
+                    {% endif %}
+                    <div style="font-weight: bold; font-size: 8.5pt; margin-top: 2px;">{{ proforma.signatory_name }}</div>
+                    <div style="font-weight: bold; font-size: 7.8pt;">{{ proforma.signatory_designation }}</div>
+                </td>
+                <td style="border: none; width: 65%;">&nbsp;</td>
+            </tr>
+        </table>
+    </div>
+
+</body>
+</html>

@@ -1,12 +1,15 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from .models import Quotation, QuotationItem
+from django.contrib.auth.models import User
+from .models import Quotation, QuotationItem, Proforma, ProformaItem
 from decimal import Decimal
 from datetime import date
 
 class QuotationTestCase(TestCase):
     def setUp(self):
         self.client = Client()
+        self.user = User.objects.create_user('testadmin', 'admin@example.com', 'pass123')
+        self.client.login(username='testadmin', password='pass123')
         self.quotation = Quotation.objects.create(
             quotation_number='TEST-QTN-001',
             quotation_date=date.today(),
@@ -23,6 +26,30 @@ class QuotationTestCase(TestCase):
             gst_rate=Decimal('18.00')
         )
         self.quotation.recalculate_totals()
+
+    def test_unauthenticated_user_redirected_to_login(self):
+        """Verify that opening the webpage/views before logging in redirects to the login page."""
+        anonymous_client = Client()
+        
+        # Root homepage/dashboard
+        res_home = anonymous_client.get(reverse('home'))
+        self.assertEqual(res_home.status_code, 302)
+        self.assertIn(reverse('login'), res_home.url)
+        
+        # Quotations history
+        res_quotations = anonymous_client.get(reverse('quotation_list'))
+        self.assertEqual(res_quotations.status_code, 302)
+        self.assertIn(reverse('login'), res_quotations.url)
+        
+        # Customer master
+        res_customers = anonymous_client.get(reverse('customer_list'))
+        self.assertEqual(res_customers.status_code, 302)
+        self.assertIn(reverse('login'), res_customers.url)
+        
+        # Product catalog
+        res_products = anonymous_client.get(reverse('product_list'))
+        self.assertEqual(res_products.status_code, 302)
+        self.assertIn(reverse('login'), res_products.url)
 
     def test_home_view(self):
         response = self.client.get(reverse('home'))
@@ -65,6 +92,7 @@ class QuotationTestCase(TestCase):
     def test_register_account_with_designation_and_cell_number(self):
         from django.contrib.auth.models import User
         from .models import UserProfile
+        self.client.logout()
         
         reg_data = {
             'first_name': 'Rahul',
@@ -651,6 +679,409 @@ class QuotationTestCase(TestCase):
         data_del = res_del.json()
         self.assertTrue(data_del['success'])
         self.assertFalse(Product.objects.filter(id=prod_id).exists())
+
+    def test_customer_quick_save_api(self):
+        from .models import Customer
+        from django.urls import reverse
+
+        # 1. Quick save new customer
+        new_data = {
+            'name': 'TEST NEW MANUAL CORP',
+            'address': 'Plot 45, Phase 2, GIDC, Naroda, Ahmedabad',
+            'phone': '9876543210',
+            'email': 'contact@manualcorp.com',
+            'gstin': '24AAACT1234M1Z5'
+        }
+        res = self.client.post(
+            reverse('customer_quick_save'),
+            data=new_data,
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 200)
+        json_data = res.json()
+        self.assertTrue(json_data['success'])
+        self.assertTrue(json_data['is_new'])
+        self.assertEqual(json_data['customer']['name'], 'TEST NEW MANUAL CORP')
+
+        cust = Customer.objects.get(name='TEST NEW MANUAL CORP')
+        self.assertEqual(cust.mobile, '9876543210')
+
+        # 2. Quick update existing customer
+        update_data = {
+            'name': 'TEST NEW MANUAL CORP',
+            'address': 'Updated Address Street 10',
+            'phone': '9999988888',
+            'email': 'updated@manualcorp.com',
+            'gstin': '24AAACT1234M1Z5'
+        }
+        res2 = self.client.post(
+            reverse('customer_quick_save'),
+            data=update_data,
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res2.status_code, 200)
+        json_data2 = res2.json()
+        self.assertTrue(json_data2['success'])
+        self.assertFalse(json_data2['is_new'])
+
+        cust.refresh_from_db()
+        self.assertEqual(cust.address, 'Updated Address Street 10')
+        self.assertEqual(cust.mobile, '9999988888')
+
+    def test_quotation_save_customer_to_master(self):
+        from .models import Quotation, Customer
+        from django.urls import reverse
+
+        post_data = {
+            'company_name': 'Maxflow Controls ( I ) Pvt. Ltd.',
+            'company_address': '18, Unique Industrial Estate, Prabhadevi, Mumbai',
+            'company_phone': '022-2436 0131',
+            'company_email': 'mumbai@maxflowcontrols.com',
+            'quotation_number': 'QTN/TEST/AUTO/001',
+            'quotation_date': '2026-10-02',
+            'salutation': 'DEAR SIR,',
+            'subject': 'QUOTATION SUBJECT',
+            'customer_name': 'AUTO SYNC CLIENT PVT LTD',
+            'customer_address': 'Plot 99, MIDC Taloja, Navi Mumbai',
+            'customer_phone': '022-27412345',
+            'customer_email': 'sales@autosync.com',
+            'customer_gstin': '27AAACA9999Z1Z0',
+            'price_terms': 'F.O.R., DESTINATION',
+            'freight_terms': 'EXTRA',
+            'pf_terms': 'NIL',
+            'delivery_terms': '4 WEEKS',
+            'payment_terms': '30 DAYS',
+            'validity_terms': '30 DAYS',
+            'tax_terms': 'GST 18% EXTRA',
+            'discount_terms': 'NIL',
+            'warranty_terms': '12 MONTHS',
+            'signatory_company': 'Maxflow Controls',
+            'signatory_name': 'TEST USER',
+            'signatory_designation': 'MANAGER',
+            'save_customer_to_master': 'on',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sr_no': '1',
+            'items-0-description': 'TEST HYDRAULIC MOTOR',
+            'items-0-hsn_code': '84136090',
+            'items-0-quantity': '1',
+            'items-0-unit': 'NOS',
+            'items-0-unit_rate': '10000.00',
+            'items-0-delivery_schedule': 'EX STOCK',
+            'items-0-gst_rate': '18.00',
+            'items-0-amount': '10000.00',
+        }
+
+        res = self.client.post(reverse('quotation_create'), data=post_data)
+        self.assertEqual(res.status_code, 302)
+
+        # Customer must have been created in Master database
+        cust = Customer.objects.filter(name='AUTO SYNC CLIENT PVT LTD').first()
+        self.assertIsNotNone(cust)
+        self.assertEqual(cust.mobile, '022-27412345')
+        self.assertEqual(cust.gstin, '27AAACA9999Z1Z0')
+
+
+class ProformaTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user('adminproforma', 'proforma@example.com', 'secret123')
+        self.client.login(username='adminproforma', password='secret123')
+
+        # Create source quotation
+        self.quotation = Quotation.objects.create(
+            quotation_number='QTN-SOURCE-001',
+            quotation_date=date.today(),
+            customer_name='HydraSpares & Engineering.',
+            customer_address='Aj-65/3, Khudiram Pally, Talpukur Road, Kolkata - 700061',
+            customer_phone='9804736661',
+            customer_gstin='19DTYPG1669F1Z1',
+            freight_amount=Decimal('550.00'),
+        )
+        self.item1 = QuotationItem.objects.create(
+            quotation=self.quotation,
+            sr_no='1',
+            description='Cartridge Valve – Part# 406AA00066A\nModel# 1CEB120P35S3',
+            quantity=Decimal('1.00'),
+            unit='NOS',
+            unit_rate=Decimal('12534.00'),
+            gst_rate=Decimal('18.00')
+        )
+        self.quotation.recalculate_totals()
+
+    def test_generate_proforma_from_quotation(self):
+        """Test clicking Generate Proforma copies data and leaves quotation untouched."""
+        orig_qtn_total = self.quotation.grand_total
+
+        res = self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+        self.assertEqual(res.status_code, 302)
+
+        # Proforma should be created
+        proforma = Proforma.objects.filter(quotation=self.quotation).first()
+        self.assertIsNotNone(proforma)
+        self.assertEqual(proforma.customer_name, self.quotation.customer_name)
+        self.assertEqual(proforma.customer_gstin, self.quotation.customer_gstin)
+        self.assertEqual(proforma.items.count(), 1)
+        self.assertEqual(proforma.freight_amount, Decimal('0.00'))
+        self.assertEqual(proforma.items.first().unit_rate, Decimal('12534.00'))
+
+        # Verify source quotation is completely unmodified
+        self.quotation.refresh_from_db()
+        self.assertEqual(self.quotation.grand_total, orig_qtn_total)
+
+    def test_edit_proforma_does_not_modify_original_quotation(self):
+        """Editing Proforma items and totals must NOT alter source quotation."""
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+        proforma = Proforma.objects.filter(quotation=self.quotation).first()
+        orig_qtn_total = self.quotation.grand_total
+
+        # Edit Proforma item
+        p_item = proforma.items.first()
+        p_item.quantity = Decimal('8.00')
+        p_item.unit_rate = Decimal('10000.00')
+        p_item.save()
+        proforma.recalculate_totals()
+
+        # Proforma total changed
+        self.assertNotEqual(proforma.grand_total, orig_qtn_total)
+
+        # Original quotation unchanged
+        self.quotation.refresh_from_db()
+        self.assertEqual(self.quotation.grand_total, orig_qtn_total)
+        self.assertEqual(self.quotation.items.first().quantity, Decimal('1.00'))
+
+    def test_multiple_proformas_from_single_quotation(self):
+        """A single quotation can generate multiple distinct Proforma Invoices."""
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+
+        proformas = Proforma.objects.filter(quotation=self.quotation)
+        self.assertEqual(proformas.count(), 2)
+        p1, p2 = proformas[0], proformas[1]
+        self.assertNotEqual(p1.proforma_number, p2.proforma_number)
+
+    def test_proforma_pdf_preview_and_download(self):
+        """Verify PDF download and preview return valid PDF stream."""
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+        proforma = Proforma.objects.filter(quotation=self.quotation).first()
+
+        # Download view
+        dl_res = self.client.get(reverse('proforma_pdf_download', args=[proforma.pk]))
+        self.assertEqual(dl_res.status_code, 200)
+        self.assertEqual(dl_res['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', dl_res['Content-Disposition'])
+        self.assertTrue(len(dl_res.content) > 1000)
+
+        # Inline preview
+        preview_res = self.client.get(reverse('proforma_pdf_preview', args=[proforma.pk]))
+        self.assertEqual(preview_res.status_code, 200)
+        self.assertEqual(preview_res['Content-Type'], 'application/pdf')
+        self.assertIn('inline', preview_res['Content-Disposition'])
+
+    def test_proforma_history_and_dashboard(self):
+        """Verify Proforma History list and Dashboard statistics."""
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+
+        # History list
+        list_res = self.client.get(reverse('proforma_list'))
+        self.assertEqual(list_res.status_code, 200)
+        self.assertContains(list_res, 'HydraSpares')
+
+        # Dashboard
+        dash_res = self.client.get(reverse('home'))
+        self.assertEqual(dash_res.status_code, 200)
+        self.assertContains(dash_res, 'Total Proformas')
+        self.assertContains(dash_res, 'Proformas This Month')
+
+    def test_proforma_full_calculation_with_discount_rounding_and_advance(self):
+        """
+        Verify the exact calculation from user's specification & screenshot:
+        1. Item: 2 * 1,60,275.00 = 3,20,550.00
+        2. Discount 15% LESS = 48,082.50
+        3. Subtotal after discount = 2,72,467.50
+        4. GST @18% = 49,044.15
+        5. Total = 3,21,511.65
+        6. Rounding Off Total = 3,21,512.00
+        7. Advance Received = 86,000.00
+        8. Balance Amount Payable = 2,35,512.00
+        """
+        proforma = Proforma.objects.create(
+            proforma_number='MCIPL/03/2627/0001/DAN',
+            proforma_date=date(2026, 3, 13),
+            customer_name='DANFOSS CLIENT',
+            customer_address='Pune, Maharashtra',
+            tax_type='IGST',
+            tax_rate=Decimal('18.00'),
+            discount_percentage=Decimal('15.00'),
+            round_off_enabled=True,
+            advance_label='ADVANCE RECEIVED ON OUR A/C',
+            advance_date=date(2026, 3, 13),
+            advance_amount=Decimal('86000.00')
+        )
+        ProformaItem.objects.create(
+            proforma=proforma,
+            sr_no='1.',
+            description='DANFOSS VICKERS MAKE PISTON PUMP MODEL : PVM018ER05CS1C28011000AAB-0000',
+            quantity=Decimal('2.00'),
+            unit='No',
+            unit_rate=Decimal('160275.00')
+        )
+
+        proforma.recalculate_totals()
+
+        self.assertEqual(proforma.subtotal, Decimal('320550.00'))
+        self.assertEqual(proforma.discount_amount, Decimal('48082.50'))
+        self.assertEqual(proforma.subtotal_after_discount, Decimal('272467.50'))
+        self.assertEqual(proforma.taxable_amount, Decimal('272467.50'))
+        self.assertEqual(proforma.igst_amount, Decimal('49044.15'))
+        self.assertEqual(proforma.grand_total, Decimal('321511.65'))
+        self.assertEqual(proforma.rounded_total, Decimal('321512.00'))
+        self.assertEqual(proforma.round_off_amount, Decimal('0.35'))
+        self.assertEqual(proforma.advance_amount, Decimal('86000.00'))
+        self.assertEqual(proforma.balance_payable, Decimal('235512.00'))
+        self.assertIn('TWO LAKH THIRTY FIVE THOUSAND FIVE HUNDRED TWELVE', proforma.amount_in_words.upper())
+
+        # Verify PDF renders these rows
+        pdf_res = self.client.get(reverse('proforma_pdf_preview', args=[proforma.pk]))
+        self.assertEqual(pdf_res.status_code, 200)
+
+        # Verify detail page renders these rows
+        detail_res = self.client.get(reverse('proforma_detail', args=[proforma.pk]))
+        self.assertEqual(detail_res.status_code, 200)
+        self.assertContains(detail_res, 'DISCOUNT 15% LESS')
+        self.assertContains(detail_res, '48,082.50')
+        self.assertContains(detail_res, '272,467.50')
+        self.assertContains(detail_res, 'GST ADD @18%')
+        self.assertContains(detail_res, '49,044.15')
+        self.assertContains(detail_res, '321,511.65')
+        self.assertContains(detail_res, 'ROUNDING OFF TOTAL')
+        self.assertContains(detail_res, '321,512.00')
+        self.assertContains(detail_res, 'ADVANCE RECEIVED ON OUR A/C DT 13.03.26')
+        self.assertContains(detail_res, '86,000.00')
+        self.assertContains(detail_res, 'BALANCE AMOUNT PAYABLE BY YOU')
+        self.assertContains(detail_res, '235,512.00')
+
+    def test_proforma_edit_with_advance_and_round_off(self):
+        """Test editing a proforma through proforma_edit view saves advance and round off correctly."""
+        self.client.get(reverse('proforma_generate_from_quotation', args=[self.quotation.pk]))
+        proforma = Proforma.objects.filter(quotation=self.quotation).first()
+        edit_url = reverse('proforma_edit', args=[proforma.pk])
+
+        post_data = {
+            'proforma_number': proforma.proforma_number,
+            'proforma_date': '2026-10-03',
+            'status': 'Draft',
+            'company_name': proforma.company_name,
+            'company_address': proforma.company_address,
+            'company_contact': proforma.company_contact,
+            'customer_name': proforma.customer_name,
+            'customer_address': proforma.customer_address,
+            'customer_contact': '',
+            'customer_gstin': '',
+            'customer_email': '',
+            'attention_to': '',
+            'salutation': proforma.salutation,
+            'po_reference': proforma.po_reference,
+            'po_date': '2026-10-03',
+            'subject_note': proforma.subject_note,
+            'freight_label': 'DTDC BY AIR',
+            'freight_amount': '0.00',
+            'tax_type': 'GST',
+            'tax_rate': '18.00',
+            'discount_percentage': '15.00',
+            'round_off_enabled': 'on',
+            'advance_label': 'ADVANCE RECEIVED ON OUR A/C',
+            'advance_date': '2026-03-13',
+            'advance_amount': '86000.00',
+            'bank_name': proforma.bank_name,
+            'bank_branch': proforma.bank_branch,
+            'bank_address': proforma.bank_address,
+            'bank_telephone': proforma.bank_telephone,
+            'bank_account_name': proforma.bank_account_name,
+            'bank_account_no': proforma.bank_account_no,
+            'bank_ifsc': proforma.bank_ifsc,
+            'bank_micr': proforma.bank_micr,
+            'request_note': proforma.request_note,
+            'signatory_company': proforma.signatory_company,
+            'signatory_name': proforma.signatory_name,
+            'signatory_designation': proforma.signatory_designation,
+            # Formset management form
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '1',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': str(proforma.items.first().pk),
+            'items-0-sr_no': '1.',
+            'items-0-description': 'Danfoss Piston Pump',
+            'items-0-quantity': '2',
+            'items-0-unit': 'No',
+            'items-0-unit_rate': '160275.00',
+        }
+
+        response = self.client.post(edit_url, post_data)
+        self.assertEqual(response.status_code, 302)
+
+        proforma.refresh_from_db()
+        self.assertEqual(proforma.subtotal, Decimal('320550.00'))
+        self.assertEqual(proforma.rounded_total, Decimal('321512.00'))
+        self.assertEqual(proforma.advance_amount, Decimal('86000.00'))
+        self.assertEqual(proforma.balance_payable, Decimal('235512.00'))
+        self.assertEqual(proforma.round_off_amount, Decimal('0.35'))
+
+    def test_proforma_summary_order_and_zero_advance(self):
+        """
+        Verify calculation & total summary order:
+        Amount -> Sub-Total -> Discount -> Sub-Total -> GST Add -> Total -> Rounding Off -> Advance (if entered) -> Balance Payable
+        Even when advance is 0, 'BALANCE AMOUNT PAYABLE BY YOU' is present in PDF.
+        """
+        proforma = Proforma.objects.create(
+            proforma_number='MCIPL/03/2627/0002/ZEROADV',
+            proforma_date=date(2026, 3, 15),
+            customer_name='ABC HYDRAULICS',
+            customer_address='Mumbai, India',
+            tax_rate=Decimal('12.00'),
+            discount_percentage=Decimal('10.00'),
+            advance_amount=Decimal('0.00'),
+            round_off_enabled=True,
+        )
+        ProformaItem.objects.create(
+            proforma=proforma,
+            sr_no='01.',
+            description='Test Hydraulic Valve',
+            quantity=Decimal('1.00'),
+            unit='No',
+            unit_rate=Decimal('10000.00'),
+        )
+        proforma.recalculate_totals()
+
+        self.assertEqual(proforma.subtotal, Decimal('10000.00'))
+        self.assertEqual(proforma.discount_amount, Decimal('1000.00'))
+        self.assertEqual(proforma.subtotal_after_discount, Decimal('9000.00'))
+        self.assertEqual(proforma.tax_amount, Decimal('1080.00'))
+        self.assertEqual(proforma.grand_total, Decimal('10080.00'))
+        self.assertEqual(proforma.rounded_total, Decimal('10080.00'))
+        self.assertEqual(proforma.balance_payable, Decimal('10080.00'))
+        self.assertEqual(proforma.gst_display_label, 'GST ADD @12%')
+
+        # Check detail preview
+        detail_res = self.client.get(reverse('proforma_detail', args=[proforma.pk]))
+        self.assertEqual(detail_res.status_code, 200)
+        self.assertContains(detail_res, 'SUB-TOTAL')
+        self.assertContains(detail_res, 'DISCOUNT 10% LESS')
+        self.assertContains(detail_res, 'GST ADD @12%')
+        self.assertContains(detail_res, 'BALANCE AMOUNT PAYABLE BY YOU')
+        self.assertContains(detail_res, '10,080.00')
+
+        # Check PDF preview
+        pdf_res = self.client.get(reverse('proforma_pdf_preview', args=[proforma.pk]))
+        self.assertEqual(pdf_res.status_code, 200)
+
+
+
+
+
 
 
 

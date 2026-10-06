@@ -1,4 +1,5 @@
 {% extends 'quotations/base.html' %}
+{% load static %}
 
 {% block title %}Preview Quotation: {{ quotation.quotation_number }} | Maxflow{% endblock %}
 
@@ -130,6 +131,9 @@
             <i class="bi bi-arrow-left me-1"></i> Back to Quotations
         </a>
         <div class="d-flex gap-2">
+            <a href="{% url 'proforma_generate_from_quotation' quotation.pk %}" class="btn btn-success shadow-sm">
+                <i class="bi bi-file-earmark-plus me-1"></i> Generate Proforma
+            </a>
             <a href="{% url 'quotation_edit' quotation.pk %}" class="btn btn-outline-primary">
                 <i class="bi bi-pencil me-1"></i> Edit Quotation
             </a>
@@ -141,6 +145,26 @@
             </a>
         </div>
     </div>
+
+    {% if quotation.proformas.all %}
+    <div class="col-lg-10">
+        <div class="alert alert-info d-flex justify-content-between align-items-center py-2 px-3 mb-1 shadow-sm">
+            <div>
+                <i class="bi bi-file-earmark-check-fill me-1 text-primary"></i>
+                <strong>Proforma Invoices for this Quotation ({{ quotation.proformas.count }}):</strong>
+                <span class="ms-2">
+                    {% for p in quotation.proformas.all %}
+                    <a href="{% url 'proforma_detail' p.pk %}" class="badge bg-light text-primary border text-decoration-none me-1">
+                        {{ p.proforma_number }} ({{ p.status }})
+                    </a>
+                    {% endfor %}
+                </span>
+            </div>
+            <a href="{% url 'proforma_list' %}" class="btn btn-sm btn-outline-primary py-0">View All</a>
+        </div>
+    </div>
+    {% endif %}
+
 
     <!-- Printable Quotation Visual Preview (Matches Reference) -->
     <div class="col-lg-10">
@@ -157,6 +181,14 @@
                     <div class="header-contacts">
                         Tel : {{ quotation.company_phone }} &nbsp;|&nbsp; WhatsApp No. : 7977642095 &nbsp;|&nbsp; Email : {{ quotation.company_email }}
                     </div>
+                    <div class="header-website fw-bold mt-1" style="font-size: 13px;">
+                        Web-Site : www.maxflowcontrols.com
+                    </div>
+                    {% if quotation.company_gstin %}
+                    <div class="header-gstin fw-bold mt-1" style="font-size: 13px; letter-spacing: 0.3px;">
+                        GSTIN : {{ quotation.company_gstin }}
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="col-md-2"></div>
             </div>
@@ -199,7 +231,7 @@
                 <tbody>
                     {% for item in items %}
                     <tr>
-                        <td class="text-center fw-bold">{{ item.sr_no }}</td>
+                        <td class="text-center fw-bold">{{ forloop.counter }}</td>
                         <td>
                             <strong>{{ item.description|linebreaksbr }}</strong>
                         </td>
@@ -255,32 +287,30 @@
             </table>
 
 
-            {% if quotation.company_gstin %}
-            <div class="fw-bold mt-2 mb-1" style="font-size: 13px;">
-                GSTIN : {{ quotation.company_gstin }}
+            <!-- Bank Details Boxed -->
+            <div class="bank-details-box fw-bold border border-dark p-2 my-2 rounded-1" style="font-size: 13px;">
+                <strong>Bank Details :</strong> Bank : ICICI Bank &nbsp;&nbsp;&nbsp; A/C No : 005705027366 &nbsp;&nbsp;&nbsp; IFSC Code : ICIC0000057 &nbsp;&nbsp;&nbsp; Branch : Prabhadevi Branch
             </div>
-            {% endif %}
-            {% if quotation.company_pan %}
-            <div class="fw-bold mb-2" style="font-size: 13px;">
-                PAN : {{ quotation.company_pan }}
-            </div>
-            {% endif %}
 
             <!-- Terms and Conditions Section -->
             <div class="terms-section">
                 <div class="terms-heading">TERMS & CONDITIONS</div>
-                <div class="row">
-                    <div class="col-12"><strong>PRICES:</strong> {{ quotation.price_terms }}</div>
-                    <div class="col-12"><strong>DISCOUNT:</strong> {{ quotation.discount_terms }}</div>
-                    <div class="col-12"><strong>TAX:</strong> {{ quotation.tax_terms }}</div>
-                    {% if quotation.pf_terms %}
-                    <div class="col-12"><strong>P & F:</strong> {{ quotation.pf_terms }}</div>
-                    {% endif %}
-                    <div class="col-12"><strong>PAYMENT:</strong> {{ quotation.payment_terms }}</div>
-                    {% if quotation.freight_terms %}
-                    <div class="col-12"><strong>FREIGHT:</strong> {{ quotation.freight_terms }}</div>
-                    {% endif %}
-                    <div class="col-12"><strong>VALIDITY:</strong> {{ quotation.validity_terms }}</div>
+                <div class="row g-2">
+                    <div class="col-12"><strong>1) PRICES :</strong> {{ quotation.price_terms }}</div>
+                    <div class="col-12"><strong>2) DISCOUNT :</strong> {{ quotation.discount_terms }}</div>
+                    <div class="col-12"><strong>3) P &amp; F :</strong> {{ quotation.pf_terms|default:"NIL" }}</div>
+                    <div class="col-12"><strong>4) PAYMENT :</strong> {{ quotation.payment_terms }}</div>
+                    <div class="col-12"><strong>5) FREIGHT :</strong> {{ quotation.freight_terms|default:"EXTRA TO YOUR ACCOUNT" }}</div>
+                    <div class="col-12"><strong>6) DESPATCH :</strong> As suggested by you. Road / Air / Courier</div>
+                    <div class="col-12"><strong>7) INSURANCE :</strong> In your scope. You are requested to arrange proper insurance to claim transit damage if any occur during transportation. Note : If you want to insured the material in transport to avoid any damage we will charges 10% insurance amount in basic price.</div>
+                    <div class="col-12"><strong>8) WARRANTY :</strong> Our products are warranty against any manufacturing defect for the period of one year from the date of invoice. No warranty shall be entertained for failure due to mis-handling, mis-alignment, oil contamination And cavitation.<br><span class="text-muted">Note : There is no warranty/ Guarantee applicable for any rubber parts</span></div>
+                    <div class="col-12"><strong>9) TAX :</strong> GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)</div>
+                    <div class="col-12"><strong>10) LD CLAUSE :</strong> Not applicable</div>
+                    <div class="col-12"><strong>11) VALIDITYE :</strong> {{ quotation.validity_terms|default:"30 Days" }}</div>
+                    <div class="col-12"><strong>12) PRICE ESCALATION CLAUSE :</strong> Price Is Expected To Change In Case Of Changes In Exchange Rate Of Inr In Comparison With Euro Or Usd As Per Products Imported By Us Or Our Principals. Any Change In Exchange Rate Beyond +/- 1.5% Will Lead To Change In Price Which Should Be Acceptable To Purchasers And A Clear ProvisionTo Be Made In The Regards. Prices Are Also Being Reviewed And Shall Change Every Six Months Due To Change In Raw Material Costs And Manpower Cost In India Or The Country Of Origin Of The Components Being Ordered. This Will Be Informed To Customer As And When It Happens And The Price Rise Need To Accepted By The Purchaser.</div>
+                    <div class="col-12"><strong>13) CLAIMS OR DAMAGE :</strong> Claim For Damage Due To Transportation Or Mishandling Will Not Be Entertained By Maxflow Controls.</div>
+                    <div class="col-12"><strong>14) EXCLUSIONS :</strong> Unloading, Installation, Commissioning, Hydraulic Oil, Fittings, Hoses Etc.</div>
+                    <div class="col-12"><strong>15) COMMISSIONING ASSISTANCE :</strong> Will Be Provided By Maxflow Controls Service Person On Chargeable Basis As And When Needed With Prior Intimation Of Min 7 Days.</div>
                     {% if quotation.special_notes %}
                     <div class="col-12 mt-2 fw-bold">
                         <strong>P.N. :</strong> {{ quotation.special_notes }}
@@ -291,12 +321,20 @@
 
             <!-- Signatory Section -->
             <div class="signatory-box">
-                <div>FOR {{ quotation.signatory_company }}</div>
-                <div class="my-3">SD.</div>
-                <div>{{ quotation.signatory_name }} – {{ quotation.signatory_designation }}</div>
-                {% if quotation.signatory_phone %}
-                <div>CELL # {{ quotation.signatory_phone }}</div>
-                {% endif %}
+                <div class="row align-items-center">
+                    <div class="col-md-5">
+                        <div>FOR {{ quotation.signatory_company }}</div>
+                        <div class="fw-bold my-1">SD.</div>
+                        <div>{{ quotation.signatory_name }} – {{ quotation.signatory_designation }}</div>
+                        {% if quotation.signatory_phone %}
+                        <div>CELL # {{ quotation.signatory_phone }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <img src="{% static 'images/stamp.png' %}" alt="Maxflow Stamp" style="height: 75px; width: 75px; object-fit: contain;">
+                    </div>
+                    <div class="col-md-5"></div>
+                </div>
             </div>
 
         </div>

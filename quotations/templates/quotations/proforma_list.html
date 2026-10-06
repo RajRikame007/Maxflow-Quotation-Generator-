@@ -1,0 +1,148 @@
+{% extends 'quotations/base.html' %}
+
+{% block title %}Proforma History | Maxflow Quotation Generator{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h3 class="fw-bold mb-1"><i class="bi bi-file-earmark-spreadsheet me-2 text-primary"></i>Proforma Invoices History</h3>
+            <p class="text-muted mb-0">Browse, search, edit, preview, and download generated Proforma Invoices.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'quotation_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-journal-text me-1"></i> Quotations History
+            </a>
+            <a href="{% url 'proforma_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i> Create New Proforma
+            </a>
+        </div>
+    </div>
+
+    <!-- Search & Filter Card -->
+    <div class="col-12">
+        <div class="card p-3 shadow-sm">
+            <form method="get" action="{% url 'proforma_list' %}" class="row g-2 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search by Proforma No, Customer, Quotation Ref...">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <select name="status" class="form-select">
+                        <option value="">-- All Statuses --</option>
+                        <option value="Draft" {% if status_filter == 'Draft' %}selected{% endif %}>Draft</option>
+                        <option value="Final" {% if status_filter == 'Final' %}selected{% endif %}>Final</option>
+                        <option value="Cancelled" {% if status_filter == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input type="date" name="date_from" value="{{ date_from }}" class="form-control" title="From Date">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" name="date_to" value="{{ date_to }}" class="form-control" title="To Date">
+                </div>
+                <div class="col-md-1 d-grid">
+                    <button type="submit" class="btn btn-secondary">Filter</button>
+                </div>
+            </form>
+            {% if query or status_filter or date_from or date_to %}
+            <div class="mt-2 small text-muted d-flex justify-content-between align-items-center">
+                <span>Active filters applied. Found {{ total_count }} proforma(s).</span>
+                <a href="{% url 'proforma_list' %}" class="text-decoration-none text-danger">
+                    <i class="bi bi-x-circle me-1"></i>Clear Filters
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Proforma List Table -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 table-custom">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">#</th>
+                                <th>Proforma Invoice No.</th>
+                                <th>Date</th>
+                                <th>Customer Name</th>
+                                <th>Quotation Ref.</th>
+                                <th>Items</th>
+                                <th>Total Amount</th>
+                                <th>Status</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in proformas %}
+                            <tr>
+                                <td class="ps-3 text-muted small">{{ forloop.counter }}</td>
+                                <td class="font-monospace fw-bold text-primary">
+                                    <a href="{% url 'proforma_detail' p.pk %}" class="text-decoration-none">{{ p.proforma_number }}</a>
+                                </td>
+                                <td>{{ p.proforma_date|date:"d M Y" }}</td>
+                                <td>
+                                    <div class="fw-semibold">{{ p.customer_name }}</div>
+                                    {% if p.attention_to %}<small class="text-muted"><i class="bi bi-person me-1"></i>Attn: {{ p.attention_to }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    {% if p.quotation %}
+                                    <a href="{% url 'quotation_detail' p.quotation.pk %}" class="badge bg-primary-subtle text-primary text-decoration-none border border-primary-subtle" title="Click to view original Quotation">
+                                        <i class="bi bi-link-45deg me-1"></i>{{ p.quotation_number_ref }}
+                                    </a>
+                                    {% elif p.quotation_number_ref %}
+                                    <span class="badge bg-light text-dark border">{{ p.quotation_number_ref }}</span>
+                                    {% else %}
+                                    <span class="text-muted small">- Direct -</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">{{ p.items.count }} item(s)</span>
+                                </td>
+                                <td class="fw-bold text-dark">₹ {{ p.grand_total|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge {% if p.status == 'Final' %}bg-success{% elif p.status == 'Draft' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {{ p.status }}
+                                    </span>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'proforma_detail' p.pk %}" class="btn btn-outline-secondary" title="View Preview">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                        <a href="{% url 'proforma_pdf_download' p.pk %}" class="btn btn-outline-danger" title="Download PDF">
+                                            <i class="bi bi-file-pdf"></i> PDF
+                                        </a>
+                                        <a href="{% url 'proforma_edit' p.pk %}" class="btn btn-outline-primary" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{% url 'proforma_delete' p.pk %}" class="btn btn-outline-danger" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="9" class="text-center py-5 text-muted">
+                                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                    {% if query or status_filter %}
+                                        No Proforma Invoices found matching your search.
+                                    {% else %}
+                                        No Proforma Invoices generated yet. Go to <a href="{% url 'quotation_list' %}">Quotation History</a> and click <strong>Generate Proforma</strong>!
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

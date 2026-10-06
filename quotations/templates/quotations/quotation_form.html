@@ -33,6 +33,22 @@
         text-align: center;
         font-weight: 500;
     }
+    /* Hide up/down spinner buttons on Unit Rate and number inputs */
+    input.item-rate::-webkit-outer-spin-button,
+    input.item-rate::-webkit-inner-spin-button,
+    input[name*="unit_rate"]::-webkit-outer-spin-button,
+    input[name*="unit_rate"]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    input.item-rate,
+    input[name*="unit_rate"],
+    input[type=number] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
 </style>
 {% endblock %}
 
@@ -175,6 +191,34 @@
                                     {{ form.customer_gstin }}
                                 </div>
                             </div>
+
+                            <!-- Customer Master & Excel Live Sync Bar -->
+                            <div class="p-3 mt-3 rounded-3 border bg-light shadow-sm" id="customer-sync-panel">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                    <div>
+                                        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                                            <span class="fw-semibold small text-dark">
+                                                <i class="bi bi-file-earmark-excel-fill text-success me-1"></i>Master &amp; Excel Sync:
+                                            </span>
+                                            <span id="cust-sync-status-badge" class="badge bg-secondary-subtle text-secondary border small">
+                                                <i class="bi bi-pencil me-1"></i>Type Company Name
+                                            </span>
+                                        </div>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" name="save_customer_to_master" id="save_customer_to_master" value="on" checked>
+                                            <label class="form-check-label small text-muted" for="save_customer_to_master">
+                                                Save / update this customer in Master &amp; Excel when saving quotation
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold shadow-sm px-3" id="btn-save-customer-now" onclick="quickSaveCustomerToMaster()" disabled title="Save or update this company in Customer Master database and customer address raj.xlsx">
+                                            <i class="bi bi-cloud-arrow-up-fill me-1"></i><span id="btn-save-customer-text">Save to Master &amp; Excel</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="customer-sync-feedback" class="small mt-2 alert alert-success py-1 px-2 d-none mb-0"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -219,8 +263,8 @@
                         <table class="table table-bordered align-middle" id="items-table" style="min-width: 1150px;">
                             <thead class="table-light">
                                 <tr class="text-center small">
-                                    <th style="width: 4%;">Sr.#</th>
-                                    <th style="width: 28%;">Description of Item *</th>
+                                    <th style="width: 5%; min-width: 60px;">Sr.#</th>
+                                    <th style="width: 27%;">Description of Item *</th>
                                     <th style="width: 10%;">HSN Code</th>
                                     <th style="width: 7%;">Qty</th>
                                     <th style="width: 8%;">Unit</th>
@@ -620,6 +664,9 @@
         }
 
         highlightFields([nameInput, addrInput, phoneInput, emailInput, gstinInput]);
+        if (typeof updateCustomerSyncStatus === 'function') {
+            updateCustomerSyncStatus();
+        }
     }
 
     function autoFillCustomerFromSelect(selectEl) {
@@ -671,6 +718,194 @@
         if (selectEl) selectEl.value = '';
         if (badge) badge.classList.add('d-none');
         if (editBtn) editBtn.style.display = 'none';
+
+        if (typeof updateCustomerSyncStatus === 'function') {
+            updateCustomerSyncStatus();
+        }
+    }
+
+    // Live update customer master sync badge and button
+    function updateCustomerSyncStatus() {
+        const nameInput = document.getElementById('id_customer_name');
+        const badge = document.getElementById('cust-sync-status-badge');
+        const btn = document.getElementById('btn-save-customer-now');
+        const btnText = document.getElementById('btn-save-customer-text');
+        if (!nameInput || !badge || !btn || !btnText) return;
+
+        const val = (nameInput.value || '').trim();
+        if (!val) {
+            badge.className = 'badge bg-secondary-subtle text-secondary border small';
+            badge.innerHTML = '<i class="bi bi-pencil me-1"></i>Type Company Name';
+            btn.disabled = true;
+            btnText.textContent = 'Save to Master & Excel';
+            return;
+        }
+
+        // Check if matching customer in catalog
+        let matched = null;
+        for (const key in window.CUSTOMERS_CATALOG) {
+            if (key.toLowerCase() === val.toLowerCase()) {
+                matched = window.CUSTOMERS_CATALOG[key];
+                break;
+            }
+        }
+
+        btn.disabled = false;
+        if (matched) {
+            badge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small';
+            badge.innerHTML = '<i class="bi bi-building-check me-1"></i>Existing in Master';
+            btnText.textContent = 'Update Master & Excel Now';
+            btn.title = `Update existing company '${matched.name}' in database Master & 'customer address raj.xlsx'`;
+        } else {
+            badge.className = 'badge bg-info-subtle text-info-emphasis border border-info-subtle small';
+            badge.innerHTML = '<i class="bi bi-plus-circle me-1"></i>New Company';
+            btnText.textContent = 'Save as New in Master & Excel';
+            btn.title = `Save '${val}' as a new customer in database Master & 'customer address raj.xlsx'`;
+        }
+    }
+
+    // Quick-save or update customer directly from quotation form
+    function quickSaveCustomerToMaster() {
+        const nameInput = document.getElementById('id_customer_name');
+        const addrInput = document.getElementById('id_customer_address');
+        const phoneInput = document.getElementById('id_customer_phone');
+        const emailInput = document.getElementById('id_customer_email');
+        const gstinInput = document.getElementById('id_customer_gstin');
+        const btn = document.getElementById('btn-save-customer-now');
+        const badge = document.getElementById('cust-sync-status-badge');
+        const feedback = document.getElementById('customer-sync-feedback');
+
+        const name = (nameInput ? nameInput.value : '').trim();
+        if (!name) {
+            alert('Please enter a Customer / Company Name first.');
+            if (nameInput) nameInput.focus();
+            return;
+        }
+
+        const address = addrInput ? addrInput.value.trim() : '';
+        const phone = phoneInput ? phoneInput.value.trim() : '';
+        const email = emailInput ? emailInput.value.trim() : '';
+        const gstin = gstinInput ? gstinInput.value.trim() : '';
+
+        const origBtnHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('address', address);
+        formData.append('phone', phone);
+        formData.append('email', email);
+        formData.append('gstin', gstin);
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') ? document.querySelector('[name=csrfmiddlewaretoken]').value : '';
+
+        fetch("{% url 'customer_quick_save' %}", {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': csrfToken
+            },
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.customer) {
+                const cust = data.customer;
+
+                // 1. Update in-memory catalog
+                window.CUSTOMERS_CATALOG[cust.name] = {
+                    name: cust.name,
+                    address: cust.address,
+                    phone: cust.phone,
+                    email: cust.email,
+                    gstin: cust.gstin
+                };
+
+                // 2. Add or update option in select dropdown
+                const selectEl = document.getElementById('customer-quick-select');
+                if (selectEl) {
+                    let foundOpt = false;
+                    for (let i = 0; i < selectEl.options.length; i++) {
+                        const opt = selectEl.options[i];
+                        if (opt.value && opt.value.toLowerCase() === cust.name.toLowerCase()) {
+                            opt.value = cust.name;
+                            opt.textContent = cust.name + (cust.gstin ? ' (GST: ' + cust.gstin + ')' : '');
+                            opt.setAttribute('data-name', cust.name);
+                            opt.setAttribute('data-address', cust.address);
+                            opt.setAttribute('data-phone', cust.phone);
+                            opt.setAttribute('data-email', cust.email);
+                            opt.setAttribute('data-gstin', cust.gstin);
+                            selectEl.selectedIndex = i;
+                            foundOpt = true;
+                            break;
+                        }
+                    }
+                    if (!foundOpt) {
+                        const newOpt = document.createElement('option');
+                        newOpt.value = cust.name;
+                        newOpt.textContent = cust.name + (cust.gstin ? ' (GST: ' + cust.gstin + ')' : '');
+                        newOpt.setAttribute('data-name', cust.name);
+                        newOpt.setAttribute('data-address', cust.address);
+                        newOpt.setAttribute('data-phone', cust.phone);
+                        newOpt.setAttribute('data-email', cust.email);
+                        newOpt.setAttribute('data-gstin', cust.gstin);
+                        selectEl.appendChild(newOpt);
+                        selectEl.value = cust.name;
+                    }
+                }
+
+                // 3. Update datalist
+                const datalistEl = document.getElementById('customer-name-datalist');
+                if (datalistEl) {
+                    let foundDatalist = false;
+                    for (let opt of datalistEl.options) {
+                        if (opt.value && opt.value.toLowerCase() === cust.name.toLowerCase()) {
+                            foundDatalist = true;
+                            break;
+                        }
+                    }
+                    if (!foundDatalist) {
+                        const opt = document.createElement('option');
+                        opt.value = cust.name;
+                        datalistEl.appendChild(opt);
+                    }
+                }
+
+                // 4. Update UI Badge and feedback
+                if (badge) {
+                    badge.className = 'badge bg-success text-white border small';
+                    badge.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Synced with Master & Excel';
+                }
+
+                btn.className = 'btn btn-sm btn-success fw-semibold shadow-sm px-3';
+                btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Saved to Master & Excel!';
+                setTimeout(() => {
+                    btn.className = 'btn btn-sm btn-outline-success fw-semibold shadow-sm px-3';
+                    btn.disabled = false;
+                    updateCustomerSyncStatus();
+                }, 3000);
+
+                if (feedback) {
+                    feedback.className = 'small mt-2 alert alert-success py-1 px-2 mb-0 d-block';
+                    feedback.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i> ${data.message}`;
+                    setTimeout(() => {
+                        feedback.classList.add('d-none');
+                    }, 5000);
+                }
+
+                highlightFields([nameInput, addrInput, phoneInput, emailInput, gstinInput]);
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = origBtnHtml;
+                alert('Could not save customer: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = origBtnHtml;
+            alert('Error saving customer: ' + err);
+        });
     }
 
     // Helper to safely escape HTML
@@ -1043,12 +1278,17 @@
                     break;
                 }
             }
+        }
+
         // Auto-match when typing directly into Customer Name input
         const nameInput = document.getElementById('id_customer_name');
         if (nameInput) {
             const handleCustomerMatch = function () {
                 const val = (nameInput.value || '').trim();
-                if (!val) return;
+                if (!val) {
+                    if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
+                    return;
+                }
 
                 for (const key in window.CUSTOMERS_CATALOG) {
                     if (key.toLowerCase() === val.toLowerCase()) {
@@ -1059,9 +1299,22 @@
                         break;
                     }
                 }
+                if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
             };
             nameInput.addEventListener('input', handleCustomerMatch);
             nameInput.addEventListener('change', handleCustomerMatch);
+        }
+
+        // Customer fields live sync status listeners
+        ['id_customer_name', 'id_customer_address', 'id_customer_phone', 'id_customer_email', 'id_customer_gstin'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', updateCustomerSyncStatus);
+                el.addEventListener('change', updateCustomerSyncStatus);
+            }
+        });
+        if (typeof updateCustomerSyncStatus === 'function') {
+            updateCustomerSyncStatus();
         }
     });
 

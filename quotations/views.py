@@ -9,9 +9,15 @@ from django.contrib.auth.decorators import login_required
 import re
 from django.db import transaction
 from django.db.models import Q, Case, When, Value, IntegerField
-from .models import Quotation, QuotationItem, Product, Customer, UserProfile, get_next_quotation_number
-from .forms import QuotationForm, QuotationItemFormSet, UserRegistrationForm, CustomerForm, ProductForm, UserProfileForm
-from .utils import render_to_pdf
+from .models import (
+    Quotation, QuotationItem, Product, Customer, UserProfile, get_next_quotation_number,
+    Proforma, ProformaItem, get_next_proforma_number
+)
+from .forms import (
+    QuotationForm, QuotationItemFormSet, UserRegistrationForm, CustomerForm, ProductForm, UserProfileForm,
+    ProformaForm, ProformaItemFormSet
+)
+from .utils import render_to_pdf, number_to_words_inr
 from .excel_sync import (
     append_or_update_customer_in_excel, delete_customer_from_excel, sync_all_customers_to_excel,
     append_or_update_product_in_excel, delete_product_from_excel, sync_all_products_to_excel
@@ -96,15 +102,34 @@ def profile_view(request):
         'profile': profile,
     })
 
+@login_required
 def home(request):
-    """Dashboard / Homepage with recent quotations and summary."""
+    """Dashboard / Homepage with recent quotations, proformas and summary statistics."""
+    from django.utils import timezone
+    now = timezone.now()
     recent_quotations = Quotation.objects.all()[:5]
     total_count = Quotation.objects.count()
+
+    # Proforma Statistics
+    total_proformas = Proforma.objects.count()
+    proformas_this_month = Proforma.objects.filter(
+        proforma_date__year=now.year,
+        proforma_date__month=now.month
+    ).count()
+    latest_proforma = Proforma.objects.first()
+    recent_proformas = Proforma.objects.all()[:5]
+
     return render(request, 'quotations/home.html', {
         'recent_quotations': recent_quotations,
         'total_count': total_count,
+        'total_proformas': total_proformas,
+        'proformas_this_month': proformas_this_month,
+        'latest_proforma': latest_proforma,
+        'recent_proformas': recent_proformas,
     })
 
+
+@login_required
 def quotation_list(request):
     """List all quotations with search and action options."""
     query = request.GET.get('q', '').strip()
@@ -161,6 +186,55 @@ def auto_sync_product_excel_if_modified():
     except Exception as e:
         print(f"Product Excel auto-sync check error: {e}")
 
+def sync_quotation_customer_to_master(customer_name, customer_address='', customer_phone='', customer_email='', customer_gstin=''):
+    """
+    Saves or updates customer details into Customer master model and customer address raj.xlsx.
+    Matches case-insensitively by name.
+    """
+    name = (customer_name or '').strip()
+    if not name:
+        return None, False, "Customer name is empty"
+
+    existing = Customer.objects.filter(name__iexact=name).first()
+    is_new = False
+    original_name = None
+    if existing:
+        customer = existing
+        original_name = customer.name
+        if customer_address and customer_address.strip():
+            customer.address = customer_address.strip()
+        if customer_phone and customer_phone.strip():
+            customer.mobile = customer_phone.strip()
+        if customer_email and customer_email.strip():
+            customer.email = customer_email.strip()
+        if customer_gstin and customer_gstin.strip():
+            customer.gstin = customer_gstin.strip()
+        customer.save()
+    else:
+        is_new = True
+        customer = Customer.objects.create(
+            name=name,
+            address=(customer_address or '').strip(),
+            mobile=(customer_phone or '').strip(),
+            email=(customer_email or '').strip(),
+            gstin=(customer_gstin or '').strip(),
+        )
+
+    excel_saved, excel_msg = append_or_update_customer_in_excel(customer, original_name=original_name)
+    global LAST_EXCEL_SYNC_MTIME
+    excel_path = os.path.join(settings.BASE_DIR, 'customer address raj.xlsx')
+    if os.path.exists(excel_path):
+        LAST_EXCEL_SYNC_MTIME = os.path.getmtime(excel_path)
+
+    return customer, is_new, excel_msg
+
+def resequence_quotation_items(quotation):
+    """Renumber quotation item serial numbers sequentially (1, 2, 3...) in row order."""
+    for idx, item in enumerate(quotation.items.all().order_by('id'), start=1):
+        if item.sr_no != str(idx):
+            QuotationItem.objects.filter(pk=item.pk).update(sr_no=str(idx))
+
+@login_required
 def quotation_create(request):
     """Create a new quotation with dynamic item rows and auto-populated signatory name."""
     auto_sync_excel_if_modified()
@@ -179,9 +253,23 @@ def quotation_create(request):
                     quotation = form.save()
                     formset.instance = quotation
                     formset.save()
+                    resequence_quotation_items(quotation)
                     # Recalculate totals automatically on the backend
                     quotation.recalculate_totals()
                 
+                # Check if user opted to save/update customer in Master & Excel
+                if request.POST.get('save_customer_to_master') in ['on', 'true', '1']:
+                    c_obj, is_new, excel_msg = sync_quotation_customer_to_master(
+                        customer_name=quotation.customer_name,
+                        customer_address=quotation.customer_address,
+                        customer_phone=quotation.customer_phone,
+                        customer_email=quotation.customer_email,
+                        customer_gstin=quotation.customer_gstin
+                    )
+                    if c_obj:
+                        action_str = "saved to" if is_new else "updated in"
+                        messages.success(request, f"Customer '{c_obj.name}' {action_str} Master & Excel ({excel_msg})")
+
                 messages.success(request, f"Quotation '{quotation.quotation_number}' created successfully!")
                 return redirect('quotation_detail', pk=quotation.pk)
             except Exception as e:
@@ -234,6 +322,7 @@ def quotation_create(request):
         'title': 'Create New Quotation'
     })
 
+@login_required
 def quotation_edit(request, pk):
     """Edit an existing quotation."""
     auto_sync_excel_if_modified()
@@ -251,7 +340,22 @@ def quotation_edit(request, pk):
             with transaction.atomic():
                 quotation = form.save()
                 formset.save()
+                resequence_quotation_items(quotation)
                 quotation.recalculate_totals()
+
+            # Check if user opted to save/update customer in Master & Excel
+            if request.POST.get('save_customer_to_master') in ['on', 'true', '1']:
+                c_obj, is_new, excel_msg = sync_quotation_customer_to_master(
+                    customer_name=quotation.customer_name,
+                    customer_address=quotation.customer_address,
+                    customer_phone=quotation.customer_phone,
+                    customer_email=quotation.customer_email,
+                    customer_gstin=quotation.customer_gstin
+                )
+                if c_obj:
+                    action_str = "saved to" if is_new else "updated in"
+                    messages.success(request, f"Customer '{c_obj.name}' {action_str} Master & Excel ({excel_msg})")
+
             messages.success(request, f"Quotation '{quotation.quotation_number}' updated successfully!")
             return redirect('quotation_detail', pk=quotation.pk)
         else:
@@ -271,6 +375,7 @@ def quotation_edit(request, pk):
         'title': f'Edit Quotation: {quotation.quotation_number}'
     })
 
+@login_required
 def customer_list(request):
     """Customer Directory view to search and manage customers."""
     auto_sync_excel_if_modified()
@@ -293,6 +398,7 @@ def customer_list(request):
         'total_count': Customer.objects.count()
     })
 
+@login_required
 def customer_create(request):
     """Add a new customer, saving directly into database and customer address raj.xlsx."""
     if request.method == 'POST':
@@ -346,6 +452,7 @@ def customer_create(request):
             messages.error(request, "Failed to add customer. Please review the errors in the form.")
     return redirect('customer_list')
 
+@login_required
 def customer_edit(request, pk):
     """
     Edit an existing customer master record.
@@ -422,6 +529,7 @@ def customer_edit(request, pk):
     })
 
 
+@login_required
 def customer_delete(request, pk):
     """
     Delete a customer from the database master and remove from 'customer address raj.xlsx'.
@@ -464,6 +572,7 @@ def customer_delete(request, pk):
     return render(request, 'quotations/customer_confirm_delete.html', {'customer': customer})
 
 
+@login_required
 def customer_export_excel(request):
     """Sync/Write all customers from database into customer address raj.xlsx."""
     success, msg = sync_all_customers_to_excel()
@@ -473,6 +582,7 @@ def customer_export_excel(request):
         messages.warning(request, msg)
     return redirect('customer_list')
 
+@login_required
 def customer_sync_excel(request):
     """Re-sync customer master database directly from 'customer address raj.xlsx'."""
     from django.core.management import call_command
@@ -483,6 +593,7 @@ def customer_sync_excel(request):
         messages.error(request, f"Failed to sync customers from Excel: {str(e)}")
     return redirect('customer_list')
 
+@login_required
 def customer_search_api(request):
     """JSON API to search customers dynamically."""
     auto_sync_excel_if_modified()
@@ -509,6 +620,55 @@ def customer_search_api(request):
         for c in qs[:50]
     ]
     return JsonResponse({'customers': data})
+
+
+@login_required
+def customer_quick_save(request):
+    """
+    AJAX endpoint to quickly save or update a customer into Master database and customer address raj.xlsx
+    directly from the Quotation Form without leaving or submitting the quotation.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'POST method required.'}, status=405)
+
+    name = request.POST.get('name', '').strip()
+    address = request.POST.get('address', '').strip()
+    phone = request.POST.get('phone', '').strip()
+    email = request.POST.get('email', '').strip()
+    gstin = request.POST.get('gstin', '').strip()
+
+    if not name:
+        return JsonResponse({'success': False, 'message': 'Customer / Company Name is required.'}, status=400)
+
+    try:
+        customer, is_new, excel_msg = sync_quotation_customer_to_master(
+            customer_name=name,
+            customer_address=address,
+            customer_phone=phone,
+            customer_email=email,
+            customer_gstin=gstin
+        )
+
+        if not customer:
+            return JsonResponse({'success': False, 'message': excel_msg or 'Could not save customer.'}, status=400)
+
+        action_word = "created and saved to" if is_new else "updated in"
+        return JsonResponse({
+            'success': True,
+            'is_new': is_new,
+            'customer': {
+                'id': customer.id,
+                'name': customer.name,
+                'address': customer.address or '',
+                'phone': customer.mobile or '',
+                'email': customer.email or '',
+                'gstin': customer.gstin or '',
+            },
+            'message': f"Customer '{customer.name}' successfully {action_word} Master & 'customer address raj.xlsx'!"
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
 
 
 def get_filtered_product_queryset(query='', brand=None):
@@ -579,6 +739,7 @@ def get_filtered_product_queryset(query='', brand=None):
     return qs
 
 
+@login_required
 def product_search_api(request):
     """
     JSON API for real-time live product searching across Item Name, Brand, and Description.
@@ -614,6 +775,7 @@ def product_search_api(request):
     return JsonResponse({'products': products, 'count': len(products)})
 
 
+@login_required
 def product_list(request):
     """Directory view for Product List.xlsx with fast flexible search and brand filtering."""
     from django.core.paginator import Paginator
@@ -642,6 +804,7 @@ def product_list(request):
     })
 
 
+@login_required
 def product_create(request):
     """Add a new product, saving directly into database and Product List.xlsx."""
     if request.method == 'POST':
@@ -694,6 +857,7 @@ def product_create(request):
     return redirect('product_list')
 
 
+@login_required
 def product_edit(request, pk):
     """
     Edit an existing product item in the catalog.
@@ -771,6 +935,7 @@ def product_edit(request, pk):
     })
 
 
+@login_required
 def product_delete(request, pk):
     """
     Delete a product from the database master and remove from 'Product List.xlsx'.
@@ -813,6 +978,7 @@ def product_delete(request, pk):
     return render(request, 'quotations/product_confirm_delete.html', {'product': product})
 
 
+@login_required
 def product_export_excel(request):
     """Sync/Write all products from database into Product List.xlsx."""
     success, msg = sync_all_products_to_excel()
@@ -823,6 +989,7 @@ def product_export_excel(request):
     return redirect('product_list')
 
 
+@login_required
 def product_sync_excel(request):
     """Manually triggers re-import of products from 'Product List.xlsx'."""
     try:
@@ -834,26 +1001,32 @@ def product_sync_excel(request):
     return redirect('product_list')
 
 
+@login_required
 def quotation_detail(request, pk):
     """Preview the quotation layout in clean web format."""
     quotation = get_object_or_404(Quotation, pk=pk)
     logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
     return render(request, 'quotations/quotation_detail.html', {
         'quotation': quotation,
         'items': quotation.items.all(),
         'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
     })
 
+@login_required
 def quotation_download_pdf(request, pk):
     """Generate and trigger download of the PDF file."""
     quotation = get_object_or_404(Quotation, pk=pk)
     items = quotation.items.all()
     logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
     
     context = {
         'quotation': quotation,
         'items': items,
         'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
     }
     
     pdf_content = render_to_pdf('quotations/pdf_template.html', context)
@@ -868,16 +1041,19 @@ def quotation_download_pdf(request, pk):
     
     return HttpResponse("Error generating PDF. Please check server logs.", status=500)
 
+@login_required
 def quotation_view_pdf(request, pk):
     """Stream PDF directly in the browser viewer."""
     quotation = get_object_or_404(Quotation, pk=pk)
     items = quotation.items.all()
     logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
     
     context = {
         'quotation': quotation,
         'items': items,
         'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
     }
     
     pdf_content = render_to_pdf('quotations/pdf_template.html', context)
@@ -889,6 +1065,7 @@ def quotation_view_pdf(request, pk):
     
     return HttpResponse("Error rendering PDF", status=500)
 
+@login_required
 def quotation_delete(request, pk):
     """Delete a quotation."""
     quotation = get_object_or_404(Quotation, pk=pk)
@@ -898,3 +1075,265 @@ def quotation_delete(request, pk):
         messages.success(request, f"Quotation '{q_num}' deleted successfully.")
         return redirect('quotation_list')
     return render(request, 'quotations/quotation_confirm_delete.html', {'quotation': quotation})
+
+
+# ==============================================================================
+# PROFORMA INVOICE VIEWS
+# ==============================================================================
+
+@login_required
+def proforma_generate_from_quotation(request, pk):
+    """
+    Creates a new Proforma Invoice from an existing Quotation.
+    Pre-fills matching customer, item, and financial data without modifying the source quotation.
+    """
+    from decimal import Decimal
+    from django.utils import timezone
+
+    quotation = get_object_or_404(Quotation, pk=pk)
+    next_p_num = get_next_proforma_number(quotation.customer_name)
+
+    proforma = Proforma.objects.create(
+        quotation=quotation,
+        quotation_number_ref=quotation.quotation_number,
+        proforma_number=next_p_num,
+        proforma_date=timezone.now().date(),
+        status='Draft',
+        customer_name=quotation.customer_name,
+        customer_address=quotation.customer_address,
+        customer_contact=quotation.customer_phone or '',
+        customer_email=quotation.customer_email,
+        customer_gstin=quotation.customer_gstin or '',
+        salutation='DEAR SIR,',
+        po_reference=f"VERBAL P.O. THROUGH EMAIL REF {quotation.quotation_number}" if quotation.quotation_number else "VERBAL P.O. THROUGH EMAIL",
+        po_date=quotation.quotation_date or timezone.now().date(),
+        subject_note="WE ACKNOWLEDGE WITH THANKS RECEIPT OF YOUR {po_reference} DT. {po_date}, PLEASE FIND BELOW OUR PROFORMA INVOICE FOR YOUR KIND REFERENCE.",
+        freight_label='',
+        freight_amount=Decimal('0.00'),
+        tax_type='GST',
+        tax_rate=Decimal('18.00'),
+        discount_percentage=quotation.discount_percentage or Decimal('0.00'),
+        discount_amount=quotation.discount_amount or Decimal('0.00'),
+        round_off_enabled=True,
+        created_by=request.user if request.user.is_authenticated else None,
+    )
+
+    # Copy items from quotation into separate proforma items
+    for idx, item in enumerate(quotation.items.all()):
+        u = item.unit
+        if u == 'NOS':
+            u = 'No'
+        ProformaItem.objects.create(
+            proforma=proforma,
+            sr_no=f"{idx + 1:02d}.",
+            description=item.description,
+            quantity=item.quantity if item.quantity is not None else Decimal('1.00'),
+            unit=u or 'No',
+            unit_rate=item.unit_rate if item.unit_rate is not None else Decimal('0.00'),
+        )
+
+    proforma.recalculate_totals()
+    messages.success(
+        request,
+        f"Proforma Invoice {proforma.proforma_number} created from Quotation {quotation.quotation_number}. You can now make any necessary edits below."
+    )
+    return redirect('proforma_edit', pk=proforma.pk)
+
+
+@login_required
+def proforma_create(request):
+    """Create a new blank Proforma Invoice directly."""
+    next_p_num = get_next_proforma_number()
+    proforma = Proforma.objects.create(
+        proforma_number=next_p_num,
+        created_by=request.user if request.user.is_authenticated else None
+    )
+    ProformaItem.objects.create(
+        proforma=proforma,
+        sr_no='01.',
+        description='',
+        quantity=1,
+        unit='No',
+        unit_rate=0
+    )
+    proforma.recalculate_totals()
+    return redirect('proforma_edit', pk=proforma.pk)
+
+
+@login_required
+def proforma_edit(request, pk):
+    """
+    Proforma Edit View.
+    Allows modifying all header fields, customer details, PO references, item rows, freight, and taxes.
+    """
+    proforma = get_object_or_404(Proforma, pk=pk)
+
+    if request.method == 'POST':
+        form = ProformaForm(request.POST, instance=proforma)
+        formset = ProformaItemFormSet(request.POST, instance=proforma)
+
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                saved_proforma = form.save()
+                formset.save()
+                saved_proforma.refresh_from_db()
+                saved_proforma.recalculate_totals()
+
+            messages.success(request, f"Proforma {saved_proforma.proforma_number} saved successfully!")
+            if 'save_and_preview' in request.POST:
+                return redirect('proforma_detail', pk=saved_proforma.pk)
+            return redirect('proforma_edit', pk=saved_proforma.pk)
+        else:
+            err_list = []
+            for field, errs in form.errors.items():
+                err_list.append(f"{field}: {', '.join(errs)}")
+            for form_err in formset.errors:
+                if form_err:
+                    for field, errs in form_err.items():
+                        err_list.append(f"Item {field}: {', '.join(errs)}")
+            err_msg = "Please correct the errors in the form: " + " | ".join(err_list) if err_list else "Please correct the errors in the form."
+            messages.error(request, err_msg)
+    else:
+        form = ProformaForm(instance=proforma)
+        formset = ProformaItemFormSet(instance=proforma)
+
+    customers = Customer.objects.filter(is_active=True)
+    products = Product.objects.filter(is_active=True)
+
+    return render(request, 'quotations/proforma_form.html', {
+        'form': form,
+        'formset': formset,
+        'proforma': proforma,
+        'customers': customers,
+        'products': products,
+        'title': f'Edit Proforma: {proforma.proforma_number}',
+    })
+
+
+@login_required
+def proforma_detail(request, pk):
+    """
+    Proforma Detail / Preview Page.
+    Visual presentation faithfully mirroring the reference Proforma Invoice.
+    """
+    proforma = get_object_or_404(Proforma, pk=pk)
+    proforma.recalculate_totals()
+    items = proforma.items.all()
+    logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
+
+    return render(request, 'quotations/proforma_detail.html', {
+        'proforma': proforma,
+        'items': items,
+        'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
+    })
+
+
+@login_required
+def proforma_list(request):
+    """
+    Proforma History / Tracking view.
+    Includes search, filtering by date, status, customer, and action buttons.
+    """
+    query = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+
+    proformas = Proforma.objects.all()
+
+    if query:
+        proformas = proformas.filter(
+            Q(proforma_number__icontains=query) |
+            Q(customer_name__icontains=query) |
+            Q(quotation_number_ref__icontains=query) |
+            Q(attention_to__icontains=query)
+        )
+
+    if status_filter:
+        proformas = proformas.filter(status=status_filter)
+
+    if date_from:
+        proformas = proformas.filter(proforma_date__gte=date_from)
+
+    if date_to:
+        proformas = proformas.filter(proforma_date__lte=date_to)
+
+    total_count = proformas.count()
+
+    return render(request, 'quotations/proforma_list.html', {
+        'proformas': proformas,
+        'query': query,
+        'status_filter': status_filter,
+        'date_from': date_from,
+        'date_to': date_to,
+        'total_count': total_count,
+    })
+
+
+@login_required
+def proforma_download_pdf(request, pk):
+    """Generate and trigger download of the branded Proforma PDF."""
+    proforma = get_object_or_404(Proforma, pk=pk)
+    proforma.recalculate_totals()
+    items = proforma.items.all()
+    logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
+
+    context = {
+        'proforma': proforma,
+        'items': items,
+        'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
+    }
+
+    pdf_content = render_to_pdf('quotations/proforma_pdf_template.html', context)
+
+    if pdf_content:
+        safe_num = proforma.proforma_number.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        filename = f"Proforma_{safe_num}.pdf"
+        response = HttpResponse(pdf_content, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    return HttpResponse("Error generating Proforma PDF. Please check server logs.", status=500)
+
+
+@login_required
+def proforma_view_pdf(request, pk):
+    """Stream Proforma PDF directly in browser tab viewer."""
+    proforma = get_object_or_404(Proforma, pk=pk)
+    proforma.recalculate_totals()
+    items = proforma.items.all()
+    logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
+    stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
+
+    context = {
+        'proforma': proforma,
+        'items': items,
+        'logo_path': logo_path if os.path.exists(logo_path) else None,
+        'stamp_path': stamp_path if os.path.exists(stamp_path) else None,
+    }
+
+    pdf_content = render_to_pdf('quotations/proforma_pdf_template.html', context)
+
+    if pdf_content:
+        response = HttpResponse(pdf_content, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="Proforma_{proforma.proforma_number}.pdf"'
+        return response
+
+    return HttpResponse("Error rendering Proforma PDF", status=500)
+
+
+@login_required
+def proforma_delete(request, pk):
+    """Delete a Proforma Invoice with confirmation."""
+    proforma = get_object_or_404(Proforma, pk=pk)
+    if request.method == 'POST':
+        p_num = proforma.proforma_number
+        proforma.delete()
+        messages.success(request, f"Proforma '{p_num}' deleted successfully.")
+        return redirect('proforma_list')
+    return render(request, 'quotations/proforma_confirm_delete.html', {'proforma': proforma})
+

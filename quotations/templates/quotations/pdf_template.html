@@ -8,9 +8,34 @@
         @page {
             size: a4 portrait;
             margin-top: 0.8cm;
-            margin-bottom: 0.8cm;
+            margin-bottom: 1.4cm;
             margin-left: 1.0cm;
             margin-right: 1.0cm;
+            @frame footer_frame {
+                -pdf-frame-content: footerContent;
+                bottom: 0.3cm;
+                margin-left: 1.0cm;
+                margin-right: 1.0cm;
+                height: 0.8cm;
+            }
+        }
+
+        .page-footer-table {
+            width: 100%;
+            border-top: 0.5px solid #000000;
+            padding-top: 2px;
+            font-size: 7.5pt;
+            color: #000000;
+        }
+
+        .footer-middle {
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .footer-right {
+            text-align: right;
+            font-weight: bold;
         }
 
         body {
@@ -133,9 +158,27 @@
             text-align: right;
         }
 
-        .gstin-pan-box {
-            font-weight: bold;
+        .header-website {
             font-size: 8.5pt;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 1px;
+            margin-bottom: 1px;
+            line-height: 1.25;
+        }
+
+        .header-gstin {
+            font-size: 9pt;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 1px;
+            line-height: 1.25;
+            letter-spacing: 0.3px;
+        }
+
+        .bank-details-box {
+            font-size: 8pt;
+            font-weight: bold;
             margin-top: 5px;
             margin-bottom: 6px;
             line-height: 1.3;
@@ -177,6 +220,21 @@
 
 <body>
 
+    <!-- Dynamic Page Footer (Rendered across all pages) -->
+    <div id="footerContent">
+        <table class="page-footer-table" cellpadding="0" cellspacing="0">
+            <tr>
+                <td width="25%" align="left">&nbsp;</td>
+                <td width="50%" align="center" class="footer-middle">
+                    This Quotation Consists of <pdf:pagecount> Pages
+                </td>
+                <td width="25%" align="right" class="footer-right">
+                    Page <pdf:pagenumber> of <pdf:pagecount>
+                </td>
+            </tr>
+        </table>
+    </div>
+
     <!-- Company Header with Upper-Left Logo, Centered Company Details & Right Balancing Spacer -->
     <table class="header-table" width="100%" cellpadding="0" cellspacing="0">
         <tr>
@@ -193,6 +251,14 @@
                 <div class="header-contacts">
                     Tel : {{ quotation.company_phone }} &nbsp;|&nbsp; WhatsApp No. : 7977642095 &nbsp;|&nbsp; Email : {{ quotation.company_email }}
                 </div>
+                <div class="header-website">
+                    <b>Web-Site : www.maxflowcontrols.com</b>
+                </div>
+                {% if quotation.company_gstin %}
+                <div class="header-gstin">
+                    <b>GSTIN : {{ quotation.company_gstin }}</b>
+                </div>
+                {% endif %}
             </td>
             <td width="13%" valign="middle" align="right">
                 &nbsp;
@@ -241,7 +307,7 @@
         <tbody>
             {% for item in items %}
             <tr>
-                <td align="center" style="font-weight: bold;">{{ item.sr_no }}</td>
+                <td align="center" style="font-weight: bold;">{{ forloop.counter }}</td>
                 <td align="left">
                     <b>{{ item.description|linebreaksbr }}</b>
                 </td>
@@ -297,14 +363,14 @@
         </tbody>
     </table>
 
-    <div class="gstin-pan-box">
-        {% if quotation.company_gstin %}
-        <div>GSTIN : {{ quotation.company_gstin }}</div>
-        {% endif %}
-        {% if quotation.company_pan %}
-        <div>PAN : {{ quotation.company_pan }}</div>
-        {% endif %}
-    </div>
+    <!-- Bank Details Boxed -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #000000; margin-top: 4px; margin-bottom: 5px;">
+        <tr>
+            <td style="padding: 3px 6px; font-size: 8pt; font-weight: bold; border: none;">
+                <b>Bank Details : Bank : ICICI Bank &nbsp;&nbsp; A/C No : 005705027366 &nbsp;&nbsp; IFSC Code : ICIC0000057 &nbsp;&nbsp; Branch : Prabhadevi Branch</b>
+            </td>
+        </tr>
+    </table>
 
     <!-- Terms and Conditions Boxed -->
     <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #000000; margin-top: 4px; margin-bottom: 6px;">
@@ -312,18 +378,21 @@
             <td style="padding: 4px 6px; border: none;">
                 <div class="terms-title">TERMS &amp; CONDITIONS</div>
                 <div class="terms-content">
-                    <div class="terms-item"><b>PRICES:</b> {{ quotation.price_terms }}</div>
-                    <div class="terms-item"><b>DISCOUNT :</b> {{ quotation.discount_terms }}</div>
-                    <div class="terms-item"><b>TAX :</b> {{ quotation.tax_terms }}</div>
-                    {% if quotation.pf_terms %}
-                    <div class="terms-item"><b>P &amp; F :</b> {{ quotation.pf_terms }}</div>
-                    {% endif %}
-                    <div class="terms-item"><b>PAYMENT :</b> {{ quotation.payment_terms }}</div>
-                    {% if quotation.freight_terms %}
-                    <div class="terms-item"><b>FREIGHT :</b> {{ quotation.freight_terms }}</div>
-                    {% endif %}
-                    <div class="terms-item"><b>VALIDITY :</b> {{ quotation.validity_terms }}</div>
-
+                    <div class="terms-item"><b>1) PRICES :</b> {{ quotation.price_terms }}</div>
+                    <div class="terms-item"><b>2) DISCOUNT :</b> {{ quotation.discount_terms }}</div>
+                    <div class="terms-item"><b>3) P &amp; F :</b> {{ quotation.pf_terms|default:"NIL" }}</div>
+                    <div class="terms-item"><b>4) PAYMENT :</b> {{ quotation.payment_terms }}</div>
+                    <div class="terms-item"><b>5) FREIGHT :</b> {{ quotation.freight_terms|default:"EXTRA TO YOUR ACCOUNT" }}</div>
+                    <div class="terms-item"><b>6) DESPATCH :</b> As suggested by you. Road / Air / Courier</div>
+                    <div class="terms-item"><b>7) INSURANCE :</b> In your scope. You are requested to arrange proper insurance to claim transit damage if any occur during transportation. Note : If you want to insured the material in transport to avoid any damage we will charges 10% insurance amount in basic price.</div>
+                    <div class="terms-item"><b>8) WARRANTY :</b> Our products are warranty against any manufacturing defect for the period of one year from the date of invoice. No warranty shall be entertained for failure due to mis-handling, mis-alignment, oil contamination And cavitation.<br>Note : There is no warranty/ Guarantee applicable for any rubber parts</div>
+                    <div class="terms-item"><b>9) TAX :</b> GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)</div>
+                    <div class="terms-item"><b>10) LD CLAUSE :</b> Not applicable</div>
+                    <div class="terms-item"><b>11) VALIDITYE :</b> {{ quotation.validity_terms|default:"30 Days" }}</div>
+                    <div class="terms-item"><b>12) PRICE ESCALATION CLAUSE :</b> Price Is Expected To Change In Case Of Changes In Exchange Rate Of Inr In Comparison With Euro Or Usd As Per Products Imported By Us Or Our Principals. Any Change In Exchange Rate Beyond +/- 1.5% Will Lead To Change In Price Which Should Be Acceptable To Purchasers And A Clear ProvisionTo Be Made In The Regards. Prices Are Also Being Reviewed And Shall Change Every Six Months Due To Change In Raw Material Costs And Manpower Cost In India Or The Country Of Origin Of The Components Being Ordered. This Will Be Informed To Customer As And When It Happens And The Price Rise Need To Accepted By The Purchaser.</div>
+                    <div class="terms-item"><b>13) CLAIMS OR DAMAGE :</b> Claim For Damage Due To Transportation Or Mishandling Will Not Be Entertained By Maxflow Controls.</div>
+                    <div class="terms-item"><b>14) EXCLUSIONS :</b> Unloading, Installation, Commissioning, Hydraulic Oil, Fittings, Hoses Etc.</div>
+                    <div class="terms-item"><b>15) COMMISSIONING ASSISTANCE :</b> Will Be Provided By Maxflow Controls Service Person On Chargeable Basis As And When Needed With Prior Intimation Of Min 7 Days.</div>
                     {% if quotation.special_notes %}
                     <div class="pn-clause">
                         <b>P.N. :</b> {{ quotation.special_notes }}
@@ -336,12 +405,26 @@
 
     <!-- Authorized Signatory -->
     <div class="signatory-section">
-        <div>FOR {{ quotation.signatory_company }}</div>
-        <div style="margin-top: 8px; margin-bottom: 8px;">SD.</div>
-        <div>{{ quotation.signatory_name }} - {{ quotation.signatory_designation }}</div>
-        {% if quotation.signatory_phone %}
-        <div>CELL # {{ quotation.signatory_phone }}</div>
-        {% endif %}
+        <table cellpadding="0" cellspacing="0" style="border: none; width: 100%;">
+            <tr>
+                <td valign="middle" style="border: none; width: 38%;">
+                    <div>FOR {{ quotation.signatory_company }}</div>
+                    <div style="font-weight: bold; font-size: 9.5pt; margin-top: 2px; margin-bottom: 2px;">SD.</div>
+                    <div>{{ quotation.signatory_name }} - {{ quotation.signatory_designation }}</div>
+                    {% if quotation.signatory_phone %}
+                    <div>CELL # {{ quotation.signatory_phone }}</div>
+                    {% endif %}
+                </td>
+                <td valign="middle" align="center" style="border: none; width: 24%; text-align: center;">
+                    {% if stamp_path %}
+                    <img src="{{ stamp_path }}" width="75" height="75" />
+                    {% endif %}
+                </td>
+                <td valign="middle" style="border: none; width: 38%;">
+                    &nbsp;
+                </td>
+            </tr>
+        </table>
     </div>
 
 </body>

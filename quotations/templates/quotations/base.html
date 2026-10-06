@@ -60,6 +60,23 @@
             color: #64748b;
             font-size: 0.875rem;
         }
+
+        /* Remove up/down spinner buttons from unit rate and number inputs */
+        input.item-rate::-webkit-outer-spin-button,
+        input.item-rate::-webkit-inner-spin-button,
+        input[name*="unit_rate"]::-webkit-outer-spin-button,
+        input[name*="unit_rate"]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input.item-rate,
+        input[name*="unit_rate"],
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
@@ -68,13 +85,14 @@
     <!-- Top Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow-sm">
         <div class="container">
-            <a class="navbar-brand text-white" href="{% url 'home' %}">
+            <a class="navbar-brand text-white" href="{% if user.is_authenticated %}{% url 'home' %}{% else %}{% url 'login' %}{% endif %}">
                 <i class="bi bi-file-earmark-spreadsheet-fill me-2 text-primary"></i><span style="color: #0d6efd;">Max</span><span style="color: #adb5bd;">flow</span><span class="text-white"> Quotation</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
+                {% if user.is_authenticated %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}" href="{% url 'home' %}">
@@ -84,6 +102,11 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'quotation_list' %}active{% endif %}" href="{% url 'quotation_list' %}">
                             <i class="bi bi-journal-text me-1"></i> Quotations History
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if 'proforma' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'proforma_list' %}">
+                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Proforma Invoices
                         </a>
                     </li>
                     <li class="nav-item">
@@ -103,46 +126,47 @@
                     </li>
                 </ul>
                 <div class="d-flex align-items-center gap-2">
-                    {% if user.is_authenticated %}
-                        <div class="dropdown">
-                            <button class="btn btn-outline-light btn-sm dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-person-circle me-1 text-primary"></i>
-                                <span class="fw-semibold">{% if user.first_name %}{{ user.first_name }} {{ user.last_name }}{% else %}{{ user.username }}{% endif %}</span>
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                <li><h6 class="dropdown-header">Signed in as <strong>{{ user.username }}</strong></h6></li>
-                                {% if user.profile.designation %}
-                                <li><span class="dropdown-item-text small text-muted"><i class="bi bi-briefcase me-2"></i>{{ user.profile.designation }}</span></li>
-                                {% endif %}
-                                {% if user.profile.phone %}
-                                <li><span class="dropdown-item-text small text-muted"><i class="bi bi-telephone me-2"></i>{{ user.profile.phone }}</span></li>
-                                {% endif %}
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'profile' %}">
-                                        <i class="bi bi-person-gear me-2 text-primary"></i> Profile & Signatory
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item text-danger" href="{% url 'logout' %}">
-                                        <i class="bi bi-box-arrow-right me-2"></i> Logout
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    {% else %}
-                        <a href="{% url 'login' %}" class="btn btn-outline-light btn-sm">
-                            <i class="bi bi-box-arrow-in-right me-1"></i> Login
-                        </a>
-                        <a href="{% url 'register' %}" class="btn btn-outline-info btn-sm">
-                            <i class="bi bi-person-plus me-1"></i> Register
-                        </a>
-                    {% endif %}
+                    <div class="dropdown">
+                        <button class="btn btn-outline-light btn-sm dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle me-1 text-primary"></i>
+                            <span class="fw-semibold">{% if user.first_name %}{{ user.first_name }} {{ user.last_name }}{% else %}{{ user.username }}{% endif %}</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            <li><h6 class="dropdown-header">Signed in as <strong>{{ user.username }}</strong></h6></li>
+                            {% if user.profile.designation %}
+                            <li><span class="dropdown-item-text small text-muted"><i class="bi bi-briefcase me-2"></i>{{ user.profile.designation }}</span></li>
+                            {% endif %}
+                            {% if user.profile.phone %}
+                            <li><span class="dropdown-item-text small text-muted"><i class="bi bi-telephone me-2"></i>{{ user.profile.phone }}</span></li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'profile' %}">
+                                    <i class="bi bi-person-gear me-2 text-primary"></i> Profile & Signatory
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item text-danger" href="{% url 'logout' %}">
+                                    <i class="bi bi-box-arrow-right me-2"></i> Logout
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                     <a href="{% url 'quotation_create' %}" class="btn btn-primary btn-sm">
                         <i class="bi bi-plus-lg me-1"></i> New Quotation
                     </a>
                 </div>
+                {% else %}
+                <div class="d-flex align-items-center gap-2 ms-auto">
+                    <a href="{% url 'login' %}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> Login
+                    </a>
+                    <a href="{% url 'register' %}" class="btn btn-outline-info btn-sm">
+                        <i class="bi bi-person-plus me-1"></i> Register
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </nav>

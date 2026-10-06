@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function calculateTotals() {
         let subtotal = 0;
         let rawItemTax = 0;
+        let visibleSr = 0;
 
         const rows = itemsContainer ? itemsContainer.querySelectorAll('.item-row') : [];
 
@@ -35,9 +36,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const amountInput = row.querySelector('.item-amount');
             const srInput = row.querySelector('.item-sr');
 
-            // Auto-fill serial number if empty
-            if (srInput && !srInput.value) {
-                srInput.value = (index + 1);
+            // Always keep serial numbers sequential across visible rows (1, 2, 3...)
+            visibleSr += 1;
+            if (srInput) {
+                srInput.value = visibleSr;
             }
 
             const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
@@ -106,11 +108,13 @@ document.addEventListener('DOMContentLoaded', function () {
             itemsContainer.insertAdjacentHTML('beforeend', newRowHtml);
             totalFormsInput.value = formCount + 1;
 
-            // Set serial number for new row
+            // Serial number for the new row is assigned by calculateTotals()
             const newRow = itemsContainer.lastElementChild;
-            const srInput = newRow.querySelector('.item-sr');
-            if (srInput) {
-                srInput.value = itemsContainer.querySelectorAll('.item-row').length;
+
+            // Ensure unit rate is completely blank on new rows
+            const rateInput = newRow.querySelector('.item-rate');
+            if (rateInput && (rateInput.value === '0.00' || rateInput.value === '0')) {
+                rateInput.value = '';
             }
 
             // Auto-size description textarea if present
@@ -124,12 +128,44 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Auto-format unit rate with .00 after entering amount
+    function formatRateInput(input) {
+        if (!input) return;
+        const raw = (input.value || '').trim().replace(/,/g, '');
+        if (raw === '') {
+            input.value = '';
+            return;
+        }
+        const num = parseFloat(raw);
+        if (!isNaN(num)) {
+            input.value = num.toFixed(2);
+        }
+    }
+
     // Attach change/input event listeners to row inputs
     function attachRowListeners(row) {
         const inputs = row.querySelectorAll('.item-qty, .item-rate, .item-gst');
         inputs.forEach(input => {
             input.addEventListener('input', calculateTotals);
         });
+
+        const rateInput = row.querySelector('.item-rate');
+        if (rateInput) {
+            rateInput.addEventListener('blur', function () {
+                formatRateInput(this);
+                calculateTotals();
+            });
+            rateInput.addEventListener('change', function () {
+                formatRateInput(this);
+                calculateTotals();
+            });
+            rateInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    formatRateInput(this);
+                    calculateTotals();
+                }
+            });
+        }
 
         // 1. Direct click on Product Catalog Dropdown Item
         const pickerBtns = row.querySelectorAll('.product-picker-btn');
@@ -261,9 +297,21 @@ document.addEventListener('DOMContentLoaded', function () {
     // Expose calculateTotals globally
     window.calculateQuotationTotals = calculateTotals;
 
-    // Attach listeners to all existing rows
+    // Attach listeners to all existing rows & format initial values
     const existingRows = itemsContainer ? itemsContainer.querySelectorAll('.item-row') : [];
-    existingRows.forEach(row => attachRowListeners(row));
+    existingRows.forEach(row => {
+        const descInput = row.querySelector('.item-desc');
+        const rateInput = row.querySelector('.item-rate');
+        if (rateInput) {
+            const hasNoDesc = !descInput || !descInput.value.trim();
+            if (hasNoDesc && (rateInput.value === '0.00' || rateInput.value === '0')) {
+                rateInput.value = '';
+            } else if (rateInput.value.trim() !== '') {
+                formatRateInput(rateInput);
+            }
+        }
+        attachRowListeners(row);
+    });
 
     if (discountPercentInput) {
         discountPercentInput.addEventListener('input', calculateTotals);

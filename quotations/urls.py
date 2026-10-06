@@ -21,13 +21,23 @@ urlpatterns = [
     path('customers/sync-excel/', views.customer_sync_excel, name='customer_sync_excel'),
     path('customers/export-excel/', views.customer_export_excel, name='customer_export_excel'),
     path('api/customers/search/', views.customer_search_api, name='customer_search_api'),
+    path('api/customers/quick-save/', views.customer_quick_save, name='customer_quick_save'),
     path('products/', views.product_list, name='product_list'),
     path('products/add/', views.product_create, name='product_create'),
     path('products/<int:pk>/edit/', views.product_edit, name='product_edit'),
     path('products/<int:pk>/delete/', views.product_delete, name='product_delete'),
     path('products/sync-excel/', views.product_sync_excel, name='product_sync_excel'),
     path('products/export-excel/', views.product_export_excel, name='product_export_excel'),
+    path('quotations/<int:pk>/generate-proforma/', views.proforma_generate_from_quotation, name='proforma_generate_from_quotation'),
+    path('proformas/', views.proforma_list, name='proforma_list'),
+    path('proformas/new/', views.proforma_create, name='proforma_create'),
+    path('proformas/<int:pk>/', views.proforma_detail, name='proforma_detail'),
+    path('proformas/<int:pk>/edit/', views.proforma_edit, name='proforma_edit'),
+    path('proformas/<int:pk>/delete/', views.proforma_delete, name='proforma_delete'),
+    path('proformas/<int:pk>/pdf/', views.proforma_download_pdf, name='proforma_pdf_download'),
+    path('proformas/<int:pk>/pdf/preview/', views.proforma_view_pdf, name='proforma_pdf_preview'),
     path('api/products/search/', views.product_search_api, name='product_search_api'),
 ]
+
 
 

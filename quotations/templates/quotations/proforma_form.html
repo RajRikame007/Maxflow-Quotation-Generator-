@@ -1,0 +1,875 @@
+{% extends 'quotations/base.html' %}
+{% load static %}
+
+{% block title %}{{ title }} | Maxflow Proforma Generator{% endblock %}
+
+{% block extra_css %}
+<style>
+    .section-card {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        margin-bottom: 24px;
+        background: #ffffff;
+    }
+    .section-header {
+        background-color: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 14px 20px;
+        font-weight: 600;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .total-box {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 1px solid #ced4da;
+        border-radius: 8px;
+        padding: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xl py-3">
+
+    <!-- Page Header & Action Bar -->
+    <form method="post" id="proforma-form" novalidate>
+        {% csrf_token %}
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2">
+                    <h3 class="fw-bold mb-0 text-dark">
+                        <i class="bi bi-file-earmark-text me-2 text-primary"></i>{{ title }}
+                    </h3>
+                    <span class="badge {% if proforma.status == 'Final' %}bg-success{% elif proforma.status == 'Draft' %}bg-warning text-dark{% else %}bg-secondary{% endif %} fs-6">
+                        {{ proforma.status }}
+                    </span>
+                </div>
+                <p class="text-muted mb-0 mt-1">
+                    {% if proforma.quotation %}
+                    Created from Reference Quotation: 
+                    <a href="{% url 'quotation_detail' proforma.quotation.pk %}" class="fw-bold text-decoration-none" target="_blank">
+                        {{ proforma.quotation_number_ref }} <i class="bi bi-box-arrow-up-right small"></i>
+                    </a>
+                    {% else %}
+                    Direct Proforma Invoice Generation
+                    {% endif %}
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{% url 'proforma_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i> Cancel
+                </a>
+                {% if proforma.pk %}
+                <a href="{% url 'proforma_pdf_preview' proforma.pk %}" class="btn btn-outline-info" target="_blank" title="Preview PDF in new browser tab">
+                    <i class="bi bi-file-earmark-pdf me-1"></i> View PDF
+                </a>
+                {% endif %}
+                <button type="submit" name="save_draft" class="btn btn-outline-primary">
+                    <i class="bi bi-save me-1"></i> Save Proforma
+                </button>
+                <button type="submit" name="save_and_preview" class="btn btn-primary shadow-sm">
+                    <i class="bi bi-eye me-1"></i> Save &amp; Preview
+                </button>
+            </div>
+        </div>
+
+        {% if form.errors or formset.errors %}
+        <div class="alert alert-danger shadow-sm mb-4" role="alert">
+            <h5 class="alert-heading fw-bold mb-2">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>Please correct the following errors:
+            </h5>
+            <ul class="mb-0">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                        <li><b>{{ field|title }}:</b> {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+                {% for form_errors in formset.errors %}
+                    {% for field, errors in form_errors.items %}
+                        {% for error in errors %}
+                            <li><b>Item {{ field|title }}:</b> {{ error }}</li>
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- 1. HEADER METADATA & RECIPIENT CARD -->
+        <div class="row g-4 mb-4">
+            <!-- Left: Document Details -->
+            <div class="col-md-5">
+                <div class="section-card h-100">
+                    <div class="section-header">
+                        <span><i class="bi bi-info-circle me-2 text-primary"></i>Document Reference</span>
+                    </div>
+                    <div class="p-3">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small">Proforma Invoice Number *</label>
+                                {{ form.proforma_number }}
+                                <div class="form-text text-muted small">Pattern from reference: <code>MCIPL/MM/YY(YY+1)/SEQ/CUST</code></div>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Proforma Date *</label>
+                                {{ form.proforma_date }}
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Status *</label>
+                                {{ form.status }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small">Reference Quotation #</label>
+                                {{ form.quotation_number_ref }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Customer / Recipient Details -->
+            <div class="col-md-7">
+                <div class="section-card h-100">
+                    <div class="section-header">
+                        <span><i class="bi bi-building me-2 text-primary"></i>Customer / Recipient (TO,)</span>
+                        <span class="small text-muted">Auto-filled from Quotation</span>
+                    </div>
+                    <div class="p-3">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small">Customer / Company Name *</label>
+                                {{ form.customer_name }}
+                                <datalist id="customer-name-datalist">
+                                    {% for cust in customers %}
+                                    <option value="{{ cust.name }}">{{ cust.name }} | {{ cust.address|truncatechars:30 }}</option>
+                                    {% endfor %}
+                                </datalist>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small">Customer Full Address *</label>
+                                {{ form.customer_address }}
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Contact No(s).</label>
+                                {{ form.customer_contact }}
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Customer GSTIN</label>
+                                {{ form.customer_gstin }}
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Kind Attn: (Attention To)</label>
+                                {{ form.attention_to }}
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label fw-semibold small">Customer Email</label>
+                                {{ form.customer_email }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. SALUTATION & PO REFERENCE CARD -->
+        <div class="section-card mb-4">
+            <div class="section-header">
+                <span><i class="bi bi-chat-left-quote me-2 text-primary"></i>Salutation &amp; Purchase Order Reference Line</span>
+            </div>
+            <div class="p-3">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold small">Salutation</label>
+                        {{ form.salutation }}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold small">PO / Reference #</label>
+                        {{ form.po_reference }}
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold small">PO Date</label>
+                        {{ form.po_date }}
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label fw-semibold small">Reference Opening Note (Wording from Master PDF)</label>
+                        {{ form.subject_note }}
+                        <div class="form-text text-muted small">Placeholders <code>{po_reference}</code> and <code>{po_date}</code> will automatically format on the PDF. All in capital letters in Proforma.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. ITEMS TABLE CARD -->
+        <div class="section-card mb-4">
+            <div class="section-header">
+                <span><i class="bi bi-table me-2 text-primary"></i>Items &amp; Products</span>
+                <button type="button" class="btn btn-sm btn-success" id="add-item-btn">
+                    <i class="bi bi-plus-circle me-1"></i> Add Another Item
+                </button>
+            </div>
+            <div class="p-3">
+                {{ formset.management_form }}
+
+                <!-- Units datalist -->
+                <datalist id="proforma-units-list">
+                    <option value="No">No</option>
+                    <option value="Nos">Nos</option>
+                    <option value="PCS">PCS</option>
+                    <option value="SET">SET</option>
+                    <option value="MTR">MTR</option>
+                    <option value="KG">KG</option>
+                    <option value="LOT">LOT</option>
+                </datalist>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle" id="items-table" style="min-width: 900px;">
+                        <thead class="table-light text-center small">
+                            <tr>
+                                <th style="width: 7%;">SR.NO.</th>
+                                <th style="width: 45%;">ITEM DESCRIPTION *</th>
+                                <th style="width: 10%;">QTY. *</th>
+                                <th style="width: 10%;">UNIT</th>
+                                <th style="width: 13%;">UNIT RATE (₹) *</th>
+                                <th style="width: 12%;">AMOUNT (₹)</th>
+                                <th style="width: 3%;">DEL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="items-container">
+                            {% for item_form in formset %}
+                            <tr class="item-row">
+                                <td>
+                                    {{ item_form.id }}
+                                    {{ item_form.sr_no }}
+                                </td>
+                                <td>{{ item_form.description }}</td>
+                                <td>{{ item_form.quantity }}</td>
+                                <td>{{ item_form.unit }}</td>
+                                <td>{{ item_form.unit_rate }}</td>
+                                <td>{{ item_form.amount }}</td>
+                                <td class="text-center">
+                                    {% if formset.can_delete %}
+                                        <div class="d-none">{{ item_form.DELETE }}</div>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Item">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Hidden Template Row for Dynamic JS Addition -->
+                <table style="display:none;">
+                    <tbody id="empty-item-row">
+                        <tr class="item-row">
+                            <td>
+                                {{ formset.empty_form.id }}
+                                {{ formset.empty_form.sr_no }}
+                            </td>
+                            <td>{{ formset.empty_form.description }}</td>
+                            <td>{{ formset.empty_form.quantity }}</td>
+                            <td>{{ formset.empty_form.unit }}</td>
+                            <td>{{ formset.empty_form.unit_rate }}</td>
+                            <td>{{ formset.empty_form.amount }}</td>
+                            <td class="text-center">
+                                {% if formset.can_delete %}
+                                    <div class="d-none">{{ formset.empty_form.DELETE }}</div>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Item">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4. CALCULATION & TOTAL SUMMARY (Single Unified Section) -->
+        <div class="row justify-content-end mb-4">
+            <div class="col-lg-8 col-xl-7">
+                <div class="section-card shadow-sm">
+                    <div class="section-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-calculator me-2 text-primary"></i>Calculation &amp; Total Summary</span>
+                        <div class="form-check form-switch m-0 small d-flex align-items-center gap-2">
+                            {{ form.round_off_enabled }}
+                            <label class="form-check-label fw-bold text-dark small mb-0" for="id_round_off_enabled">Rounding Off Total</label>
+                        </div>
+                    </div>
+                    <div class="p-3">
+                        <div class="table-responsive">
+                            <table class="table table-bordered align-middle mb-2">
+                                <tbody>
+                                    <!-- 1. SUB-TOTAL -->
+                                    <tr>
+                                        <td class="fw-bold bg-light text-end" style="width: 48%;">SUB-TOTAL</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">₹</span>
+                                                {{ form.subtotal }}
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 2. DISCOUNT -->
+                                    <tr id="row-discount-summary">
+                                        <td class="bg-light text-end">
+                                            <div class="fw-bold text-danger" id="lbl-discount-display">DISCOUNT LESS</div>
+                                            <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
+                                                <span class="small text-muted">Discount Rate:</span>
+                                                <div class="input-group input-group-sm" style="max-width: 125px;">
+                                                    {{ form.discount_percentage }}
+                                                    <span class="input-group-text">%</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text text-danger">-₹</span>
+                                                {{ form.discount_amount }}
+                                            </div>
+                                            <small class="text-muted d-block text-end mt-1">Enter % or Amount</small>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 3. SUB-TOTAL AFTER DISCOUNT -->
+                                    <tr id="row-subtotal-after-disc">
+                                        <td class="fw-bold bg-light text-end">SUB-TOTAL</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">₹</span>
+                                                {{ form.subtotal_after_discount }}
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 4. GST ROW (Add by our own - Rate % or Amount) -->
+                                    <tr>
+                                        <td class="bg-light text-end">
+                                            <div class="fw-bold text-dark" id="lbl-tax-gst">GST ADD @18%</div>
+                                            <div class="d-flex flex-wrap align-items-center justify-content-end gap-1 mt-1">
+                                                <div class="btn-group btn-group-sm me-1" role="group" aria-label="GST Presets">
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2 btn-gst-preset" data-rate="18">18%</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2 btn-gst-preset" data-rate="12">12%</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2 btn-gst-preset" data-rate="5">5%</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2 btn-gst-preset" data-rate="0">0%</button>
+                                                </div>
+                                                <div class="input-group input-group-sm" style="max-width: 120px;">
+                                                    {{ form.tax_rate }}
+                                                    <span class="input-group-text">%</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text text-primary">+₹</span>
+                                                {{ form.tax_amount }}
+                                            </div>
+                                            <small class="text-muted d-block text-end mt-1">Add GST by Rate % or Amount</small>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 5. TOTAL -->
+                                    <tr class="table-active">
+                                        <td class="fw-bold text-end">TOTAL</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text fw-bold">₹</span>
+                                                {{ form.grand_total }}
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 6. ROUNDING OFF TOTAL -->
+                                    <tr id="row-rounding-total">
+                                        <td class="fw-bold bg-light text-end">
+                                            ROUNDING OFF TOTAL
+                                            <span class="small text-muted fw-normal d-block" id="span-round-diff"></span>
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text fw-bold">₹</span>
+                                                {{ form.rounded_total }}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr style="display:none;">
+                                        <td colspan="2">{{ form.round_off_amount }}</td>
+                                    </tr>
+
+                                    <!-- 7. ADVANCE RECEIVED IN OUR A/C & DATE -->
+                                    <tr>
+                                        <td class="bg-light text-end">
+                                            <div class="fw-bold text-danger" id="lbl-advance-summary">ADVANCE RECEIVED IN OUR A/C</div>
+                                            <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
+                                                <span class="small fw-semibold text-secondary">Advance Date:</span>
+                                                <div style="max-width: 160px;">
+                                                    {{ form.advance_date }}
+                                                </div>
+                                            </div>
+                                            <div class="mt-1" style="max-width: 260px; margin-left: auto;">
+                                                {{ form.advance_label }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text text-danger fw-bold">-₹</span>
+                                                {{ form.advance_amount }}
+                                            </div>
+                                            <small class="text-muted d-block text-end mt-1">Enter manual advance amount (if received)</small>
+                                        </td>
+                                    </tr>
+
+                                    <!-- 8. BALANCE AMOUNT PAYABLE BY YOU -->
+                                    <tr class="table-success" id="row-balance-payable">
+                                        <td class="fw-bold text-success text-end fs-6 align-middle">
+                                            <i class="bi bi-cash-stack me-1"></i>BALANCE AMOUNT PAYABLE BY YOU
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text text-success fw-bold">₹</span>
+                                                {{ form.balance_payable }}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Hidden fields that remain stored in database -->
+                        <div style="display:none;">
+                            {{ form.freight_label }}
+                            {{ form.freight_amount }}
+                            {{ form.tax_type }}
+                            {{ form.taxable_amount }}
+                            {{ form.cgst_amount }}
+                            {{ form.sgst_amount }}
+                            {{ form.igst_amount }}
+                        </div>
+
+                        <div class="mt-3">
+                            <label class="form-label small fw-bold text-muted mb-1">AMOUNT (IN WORDS)</label>
+                            {{ form.amount_in_words }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. BANK DETAILS & SIGNATORY (ACCORDION) -->
+        <div class="accordion mb-4 shadow-sm" id="accordionSettings">
+            <div class="accordion-item border-0">
+                <h2 class="accordion-header" id="headingBank">
+                    <button class="accordion-button collapsed fw-semibold text-dark bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBank">
+                        <i class="bi bi-bank2 me-2 text-primary"></i> Company Bank Details &amp; Authorized Signatory (Click to View / Edit)
+                    </button>
+                </h2>
+                <div id="collapseBank" class="accordion-collapse collapse" data-bs-parent="#accordionSettings">
+                    <div class="accordion-body bg-light">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-primary mb-2">Bank Particulars</h6>
+                                <div class="row g-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Bank Name</label>
+                                        {{ form.bank_name }}
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Branch</label>
+                                        {{ form.bank_branch }}
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small">Bank Address</label>
+                                        {{ form.bank_address }}
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Telephone #</label>
+                                        {{ form.bank_telephone }}
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Account Name</label>
+                                        {{ form.bank_account_name }}
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label small">Account No.</label>
+                                        {{ form.bank_account_no }}
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label small">RTGS/NEFT IFSC</label>
+                                        {{ form.bank_ifsc }}
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <label class="form-label small">MICR Code</label>
+                                        {{ form.bank_micr }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-primary mb-2">Signatory &amp; Notes</h6>
+                                <div class="row g-2">
+                                    <div class="col-12">
+                                        <label class="form-label small">Signatory Company</label>
+                                        {{ form.signatory_company }}
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Signatory Name</label>
+                                        {{ form.signatory_name }}
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small">Designation</label>
+                                        {{ form.signatory_designation }}
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small">Receipt Request Note</label>
+                                        {{ form.request_note }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. BOTTOM ACTION BUTTONS -->
+        <div class="d-flex justify-content-end gap-3 mb-5">
+            <a href="{% url 'proforma_list' %}" class="btn btn-outline-secondary btn-lg">
+                <i class="bi bi-arrow-left me-1"></i> Back to History
+            </a>
+            <button type="submit" name="save_draft" class="btn btn-outline-primary btn-lg">
+                <i class="bi bi-save me-1"></i> Save Proforma
+            </button>
+            <button type="submit" name="save_and_preview" class="btn btn-primary btn-lg shadow">
+                <i class="bi bi-check-circle me-1"></i> Save &amp; Preview
+            </button>
+        </div>
+
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const totalFormsInput = document.getElementById('id_items-TOTAL_FORMS');
+    const itemsContainer = document.getElementById('items-container');
+    const addItemBtn = document.getElementById('add-item-btn');
+    const emptyRowTemplate = document.getElementById('empty-item-row').innerHTML;
+
+    // Number to words in Indian numbering system
+    function numToWordsINR(amount) {
+        const n = Math.round(Number(amount) || 0);
+        if (n === 0) return 'ZERO ONLY.';
+
+        const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE',
+                      'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN',
+                      'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
+        const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+
+        function twoDigits(num) {
+            if (num < 20) return ones[num];
+            return tens[Math.floor(num / 10)] + (num % 10 ? ' ' + ones[num % 10] : '');
+        }
+
+        function threeDigits(num) {
+            if (num < 100) return twoDigits(num);
+            return ones[Math.floor(num / 100)] + ' HUNDRED' + (num % 100 ? ' ' + twoDigits(num % 100) : '');
+        }
+
+        let numRem = n;
+        const crore = Math.floor(numRem / 10000000);
+        numRem %= 10000000;
+        const lakh = Math.floor(numRem / 100000);
+        numRem %= 100000;
+        const thousand = Math.floor(numRem / 1000);
+        numRem %= 1000;
+
+        const parts = [];
+        if (crore) parts.push(threeDigits(crore) + ' CRORE');
+        if (lakh) parts.push(twoDigits(lakh) + ' LAKH');
+        if (thousand) parts.push(twoDigits(thousand) + ' THOUSAND');
+        if (numRem) parts.push(threeDigits(numRem));
+
+        const words = parts.join(' ').trim();
+        return words ? words + ' ONLY.' : 'ZERO ONLY.';
+    }
+
+    // Recalculate totals dynamically
+    function calculateTotals() {
+        let subtotal = 0;
+        const rows = itemsContainer.querySelectorAll('.item-row');
+
+        rows.forEach(row => {
+            const deleteBox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteBox && deleteBox.checked) return;
+
+            const qtyInput = row.querySelector('.item-qty');
+            const rateInput = row.querySelector('.item-rate');
+            const amountInput = row.querySelector('.item-amount');
+
+            const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
+            const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
+            const itemAmt = Math.round(qty * rate * 100) / 100;
+
+            if (amountInput) {
+                amountInput.value = itemAmt.toFixed(2);
+            }
+            subtotal += itemAmt;
+        });
+
+        const subtotalInput = document.getElementById('id_subtotal');
+        if (subtotalInput) subtotalInput.value = subtotal.toFixed(2);
+
+        // 1. Discount calculation
+        const discPctInput = document.getElementById('id_discount_percentage');
+        const discAmtInput = document.getElementById('id_discount_amount');
+        const subtotalAfterDiscInput = document.getElementById('id_subtotal_after_discount');
+        const displayDiscAmt = document.getElementById('display_discount_amount');
+        const lblDiscountDisplay = document.getElementById('lbl-discount-display');
+        const rowDiscountSummary = document.getElementById('row-discount-summary');
+        const rowSubtotalAfterDisc = document.getElementById('row-subtotal-after-disc');
+
+        let discPct = parseFloat(discPctInput ? discPctInput.value : 0) || 0;
+        let discAmt = parseFloat(discAmtInput ? discAmtInput.value : 0) || 0;
+
+        // If percentage is positive, update discount amount
+        if (discPct > 0) {
+            discAmt = Math.round((subtotal * (discPct / 100)) * 100) / 100;
+            if (discAmtInput) discAmtInput.value = discAmt.toFixed(2);
+        }
+
+        if (displayDiscAmt) displayDiscAmt.value = discAmt.toFixed(2);
+        if (lblDiscountDisplay) {
+            const pctLabel = (discPct > 0) ? (Number.isInteger(discPct) ? discPct : discPct.toFixed(2)) + '%' : '';
+            lblDiscountDisplay.textContent = pctLabel ? `DISCOUNT ${pctLabel} LESS` : 'DISCOUNT LESS';
+        }
+
+        // Sub-total after discount is always visible for calculation transparency
+        if (rowDiscountSummary) rowDiscountSummary.style.display = '';
+        if (rowSubtotalAfterDisc) rowSubtotalAfterDisc.style.display = '';
+
+        let subtotalAfterDiscount = subtotal - discAmt;
+        if (subtotalAfterDiscount < 0) subtotalAfterDiscount = 0;
+        if (subtotalAfterDiscInput) subtotalAfterDiscInput.value = subtotalAfterDiscount.toFixed(2);
+
+        // 2. Taxable Amount (Freight/Courier charges removed)
+        const freightInput = document.getElementById('id_freight_amount');
+        if (freightInput) freightInput.value = '0.00';
+
+        let taxable = subtotalAfterDiscount;
+        if (taxable < 0) taxable = 0;
+        const taxableInput = document.getElementById('id_taxable_amount');
+        if (taxableInput) taxableInput.value = taxable.toFixed(2);
+
+        // 4. GST Tax (Unified GST, can manually change by rate or amount)
+        const taxRateInput = document.getElementById('id_tax_rate');
+        const taxAmountInput = document.getElementById('id_tax_amount');
+        const lblTaxGst = document.getElementById('lbl-tax-gst');
+
+        let taxRate = parseFloat(taxRateInput ? taxRateInput.value : 18) || 0;
+        let totalTax = 0;
+
+        if (document.activeElement === taxAmountInput) {
+            // User manually typed the GST Amount directly
+            totalTax = parseFloat(taxAmountInput.value) || 0;
+            if (taxable > 0 && taxRateInput) {
+                taxRate = Math.round((totalTax / taxable) * 10000) / 100;
+                taxRateInput.value = taxRate > 0 ? (Number.isInteger(taxRate) ? taxRate : taxRate.toFixed(2)) : '0';
+            }
+        } else {
+            // Recalculate GST Amount from Rate %
+            totalTax = Math.round(taxable * (taxRate / 100) * 100) / 100;
+            if (taxAmountInput && document.activeElement !== taxAmountInput) {
+                taxAmountInput.value = totalTax.toFixed(2);
+            }
+        }
+
+        const rateDisplay = Number.isInteger(taxRate) ? taxRate : taxRate.toFixed(2);
+        if (lblTaxGst) {
+            if (taxRate > 0) {
+                lblTaxGst.textContent = `GST ADD @${rateDisplay}%`;
+            } else if (totalTax > 0) {
+                lblTaxGst.textContent = 'GST ADD';
+            } else {
+                lblTaxGst.textContent = 'GST ADD @0%';
+            }
+        }
+
+        // Keep hidden database fields in sync
+        const cgstInput = document.getElementById('id_cgst_amount');
+        const sgstInput = document.getElementById('id_sgst_amount');
+        const igstInput = document.getElementById('id_igst_amount');
+        if (cgstInput) cgstInput.value = '0.00';
+        if (sgstInput) sgstInput.value = '0.00';
+        if (igstInput) igstInput.value = totalTax.toFixed(2);
+
+        // 5. Total
+        const grandTotal = Math.round((taxable + totalTax) * 100) / 100;
+        const grandTotalInput = document.getElementById('id_grand_total');
+        if (grandTotalInput) grandTotalInput.value = grandTotal.toFixed(2);
+
+        // 6. Rounding Off Total
+        const roundOffCheck = document.getElementById('id_round_off_enabled');
+        const roundOffAmtInput = document.getElementById('id_round_off_amount');
+        const roundedTotalInput = document.getElementById('id_rounded_total');
+        const rowRoundingTotal = document.getElementById('row-rounding-total');
+        const spanRoundDiff = document.getElementById('span-round-diff');
+
+        const isRoundOff = roundOffCheck ? roundOffCheck.checked : true;
+        let roundedTotal = grandTotal;
+        let roundOffAmt = 0;
+
+        if (isRoundOff) {
+            roundedTotal = Math.round(grandTotal);
+            roundOffAmt = Math.round((roundedTotal - grandTotal) * 100) / 100;
+            if (rowRoundingTotal) rowRoundingTotal.style.display = '';
+            if (spanRoundDiff) {
+                const sign = roundOffAmt >= 0 ? '+' : '';
+                spanRoundDiff.textContent = `(${sign}${roundOffAmt.toFixed(2)})`;
+            }
+        } else {
+            roundedTotal = grandTotal;
+            roundOffAmt = 0;
+            if (rowRoundingTotal) rowRoundingTotal.style.display = 'none';
+            if (spanRoundDiff) spanRoundDiff.textContent = '';
+        }
+
+        if (roundOffAmtInput) roundOffAmtInput.value = roundOffAmt.toFixed(2);
+        if (roundedTotalInput) roundedTotalInput.value = roundedTotal.toFixed(2);
+
+        // 7. Advance Received & Balance Payable
+        const advInput = document.getElementById('id_advance_amount');
+        const advDateInput = document.getElementById('id_advance_date');
+        const advLabelInput = document.getElementById('id_advance_label');
+        const advAmt = parseFloat(advInput ? advInput.value : 0) || 0;
+
+        const lblAdvSummary = document.getElementById('lbl-advance-summary');
+        const rowBalPayable = document.getElementById('row-balance-payable');
+        const balPayableInput = document.getElementById('id_balance_payable');
+
+        const balancePayable = Math.round((roundedTotal - advAmt) * 100) / 100;
+        if (balPayableInput) balPayableInput.value = balancePayable.toFixed(2);
+
+        if (rowBalPayable) rowBalPayable.style.display = '';
+
+        let baseAdv = (advLabelInput && advLabelInput.value) ? advLabelInput.value.trim() : 'ADVANCE RECEIVED IN OUR A/C';
+        baseAdv = baseAdv.replace(/\s+DT\s+\d{2}\.\d{2}\.\d{2,4}/i, '').trim();
+        if (!baseAdv) baseAdv = 'ADVANCE RECEIVED IN OUR A/C';
+
+        let displayAdv = baseAdv;
+        if (advDateInput && advDateInput.value) {
+            const parts = advDateInput.value.split('-');
+            if (parts.length === 3) {
+                const yr = parts[0].slice(-2);
+                displayAdv += ` DT ${parts[2]}.${parts[1]}.${yr}`;
+            }
+        }
+        if (lblAdvSummary) lblAdvSummary.textContent = displayAdv;
+
+        // 8. Amount in words
+        const wordsInput = document.getElementById('id_amount_in_words');
+        const finalForWords = advAmt > 0 ? balancePayable : roundedTotal;
+        if (wordsInput) wordsInput.value = numToWordsINR(finalForWords);
+    }
+
+    // Attach listeners for dynamic recalculation
+    itemsContainer.addEventListener('input', function (e) {
+        if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-rate')) {
+            calculateTotals();
+        }
+    });
+
+    // GST preset buttons
+    document.querySelectorAll('.btn-gst-preset').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const rate = parseFloat(this.dataset.rate) || 0;
+            const taxRateInput = document.getElementById('id_tax_rate');
+            if (taxRateInput) {
+                taxRateInput.value = rate.toString();
+            }
+            calculateTotals();
+        });
+    });
+
+    // Discount percentage -> auto calc amount
+    const discPctEl = document.getElementById('id_discount_percentage');
+    if (discPctEl) {
+        discPctEl.addEventListener('input', calculateTotals);
+    }
+
+    // Discount direct amount -> auto calc % if needed
+    const discAmtEl = document.getElementById('id_discount_amount');
+    if (discAmtEl) {
+        discAmtEl.addEventListener('input', function () {
+            const subtotal = parseFloat(document.getElementById('id_subtotal').value || 0);
+            const amt = parseFloat(this.value || 0);
+            if (subtotal > 0 && discPctEl && document.activeElement === this) {
+                const pct = Math.round((amt / subtotal) * 10000) / 100;
+                discPctEl.value = pct > 0 ? pct.toFixed(2) : '';
+            }
+            calculateTotals();
+        });
+    }
+
+    ['id_tax_rate', 'id_tax_amount', 'id_round_off_enabled', 'id_advance_amount', 'id_advance_date', 'id_advance_label'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', calculateTotals);
+            el.addEventListener('change', calculateTotals);
+            el.addEventListener('keyup', calculateTotals);
+            el.addEventListener('click', calculateTotals);
+        }
+    });
+
+    // Add Item Row
+    if (addItemBtn) {
+        addItemBtn.addEventListener('click', function () {
+            const formIdx = parseInt(totalFormsInput.value, 10);
+            const newRowHtml = emptyRowTemplate.replace(/__prefix__/g, formIdx);
+            itemsContainer.insertAdjacentHTML('beforeend', newRowHtml);
+            totalFormsInput.value = formIdx + 1;
+
+            // Auto-number sr_no
+            const visibleRows = Array.from(itemsContainer.querySelectorAll('.item-row')).filter(
+                r => r.style.display !== 'none'
+            );
+            const newRow = visibleRows[visibleRows.length - 1];
+            if (newRow) {
+                const srInput = newRow.querySelector('.item-sr');
+                if (srInput) {
+                    const num = visibleRows.length;
+                    srInput.value = (num < 10 ? '0' + num : num) + '.';
+                }
+            }
+            calculateTotals();
+        });
+    }
+
+    // Remove Item Row
+    itemsContainer.addEventListener('click', function (e) {
+        const btn = e.target.closest('.remove-item-btn');
+        if (btn) {
+            const row = btn.closest('.item-row');
+            const deleteBox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteBox) {
+                deleteBox.checked = true;
+                row.style.display = 'none';
+            } else {
+                row.remove();
+            }
+            calculateTotals();
+        }
+    });
+
+    // Initial calculation on page load
+    calculateTotals();
+});
+</script>
+{% endblock %}

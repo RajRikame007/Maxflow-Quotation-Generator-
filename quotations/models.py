@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from .utils import number_to_words_inr, get_customer_code
 
 def get_next_quotation_number(prefix="QTN/MCIPL/26-27/"):
     """
@@ -310,4 +311,357 @@ class UserProfile(models.Model):
 def create_or_update_user_profile(sender, instance, created, **kwargs):
     if created:
         UserProfile.objects.get_or_create(user=instance)
+
+
+def get_next_proforma_number(customer_name=None, date=None):
+    """
+    Auto-generates sequential Proforma number matching company pattern:
+    e.g. MCIPL/09/2627/0106/HSE
+    Pattern: MCIPL/{MM}/{FY}/{SEQ:04d}/{CUST_CODE}
+    """
+    now = date or timezone.now()
+    month_str = now.strftime('%m')
+    year = now.year
+    if now.month >= 4:
+        fy_str = f"{str(year)[-2:]}{str(year + 1)[-2:]}"
+    else:
+        fy_str = f"{str(year - 1)[-2:]}{str(year)[-2:]}"
+
+    base_prefix = f"MCIPL/{month_str}/{fy_str}/"
+    existing = Proforma.objects.filter(proforma_number__startswith=base_prefix).values_list('proforma_number', flat=True)
+
+    max_seq = 105  # Default baseline sequence so next starts at 0106 matching reference series
+    pattern = re.compile(rf"^{re.escape(base_prefix)}(\d+)")
+    for p_num in existing:
+        m = pattern.search(p_num)
+        if m:
+            try:
+                seq = int(m.group(1))
+                if seq > max_seq:
+                    max_seq = seq
+            except ValueError:
+                pass
+
+    next_seq = max_seq + 1
+    cust_code = get_customer_code(customer_name) if customer_name else "GEN"
+    return f"{base_prefix}{next_seq:04d}/{cust_code}"
+
+
+class Proforma(models.Model):
+    STATUS_CHOICES = [
+        ('Draft', 'Draft'),
+        ('Final', 'Final'),
+        ('Cancelled', 'Cancelled'),
+    ]
+
+    TAX_TYPE_CHOICES = [
+        ('GST', 'GST (18%)'),
+        ('IGST', 'IGST (Inter-State 18%)'),
+        ('CGST_SGST', 'CGST + SGST (Intra-State / Maharashtra 9% + 9%)'),
+        ('EXEMPT', 'Exempt / No Tax (0%)'),
+    ]
+
+    # Reference to original quotation
+    quotation = models.ForeignKey(
+        Quotation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='proformas',
+        verbose_name="Source Quotation"
+    )
+    quotation_number_ref = models.CharField(max_length=100, blank=True, default='', verbose_name="Quotation Reference No.")
+
+    # Metadata & Status
+    proforma_number = models.CharField(max_length=100, unique=True, verbose_name="Proforma Invoice No.")
+    proforma_date = models.DateField(default=timezone.now, verbose_name="Proforma Date")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Draft', verbose_name="Status")
+
+    # Company Details (Matching reference PDF)
+    company_name = models.CharField(max_length=255, default='MAXFLOW CONTROLS (INDIA) PVT. LTD.')
+    company_address = models.TextField(default='18, UNIQUE INDUSTRIAL ESTATE, OFF. VEER SAVARKAR MARG, PRABHADEVI, MUMBAI – 400 025')
+    company_contact = models.TextField(default='TEL: 022 – 24360131 / 32, EMAIL: mumbai@maxflowcontrols.com / Cell:8928386417 / GST NO. 27AABCM8025D1ZQ')
+
+    # Customer Details
+    customer_name = models.CharField(max_length=255, verbose_name="Customer / Company Name")
+    customer_address = models.TextField(verbose_name="Customer Address")
+    customer_contact = models.CharField(max_length=100, blank=True, default='', verbose_name="Contact No.")
+    customer_gstin = models.CharField(max_length=50, blank=True, default='', verbose_name="Customer GSTIN")
+    customer_email = models.EmailField(blank=True, null=True, verbose_name="Customer Email")
+    attention_to = models.CharField(max_length=150, blank=True, default='', verbose_name="Kind Attn.")
+
+    # Salutation & PO/Opening Reference
+    salutation = models.CharField(max_length=50, default='DEAR SIR,')
+    po_reference = models.CharField(max_length=150, default='VERBAL P.O. THROUGH EMAIL', verbose_name="PO / Reference No.")
+    po_date = models.DateField(default=timezone.now, verbose_name="PO Date")
+    subject_note = models.TextField(
+        default="WE ACKNOWLEDGE WITH THANKS RECEIPT OF YOUR {po_reference} DT. {po_date}, PLEASE FIND BELOW OUR PROFORMA INVOICE FOR YOUR KIND REFERENCE.",
+        verbose_name="Reference / Subject Opening Note"
+    )
+
+    # Freight & Courier
+    freight_label = models.CharField(max_length=100, default='DTDC BY AIR', verbose_name="Freight / Courier Charge Label")
+    freight_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Freight / Courier (Rs.)")
+
+    # Tax & Calculations
+    tax_type = models.CharField(max_length=20, choices=TAX_TYPE_CHOICES, default='GST', blank=True, verbose_name="Tax Type")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('18.00'), blank=True, null=True, verbose_name="Tax Rate %")
+
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Item Subtotal (Rs.)")
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Discount %")
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Discount (Rs.)")
+    subtotal_after_discount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Sub-Total after Discount (Rs.)")
+    taxable_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Taxable Amount (Rs.)")
+
+    cgst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="CGST (Rs.)")
+    sgst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="SGST (Rs.)")
+    igst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="IGST (Rs.)")
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Total Tax (Rs.)")
+    grand_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Total (Rs.)")
+
+    # Rounding Off Total
+    round_off_enabled = models.BooleanField(default=True, verbose_name="Enable Rounding Off Total")
+    round_off_amount = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Round Off (+/-)")
+    rounded_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Rounding Off Total (Rs.)")
+
+    # Advance Received & Balance Payable
+    advance_label = models.CharField(max_length=200, default='ADVANCE RECEIVED IN OUR A/C', blank=True, verbose_name="Advance Received Description")
+    advance_date = models.DateField(null=True, blank=True, verbose_name="Advance Received Date")
+    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Advance Received (Rs.)")
+    balance_payable = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Balance Amount Payable by You (Rs.)")
+
+    amount_in_words = models.CharField(max_length=500, blank=True, default='', verbose_name="Amount in Words")
+
+    # Bank Details (Pre-filled with master reference details)
+    bank_name = models.CharField(max_length=150, default='ICICI BANK LIMITED.')
+    bank_branch = models.CharField(max_length=150, default='PRABHADEVI BRANCH.')
+    bank_address = models.TextField(default='KALA ACADEMY, RAVINDRA NATYA MANDIR, PRABHADEVI,\nMUMBAI – 400 028.')
+    bank_telephone = models.CharField(max_length=100, default='022 6819 1509.')
+    bank_account_name = models.CharField(max_length=200, default='MAXFLOW CONTROLS INDIA PRIVATE LIMITED.')
+    bank_account_no = models.CharField(max_length=100, default='005705027366')
+    bank_ifsc = models.CharField(max_length=50, default='ICIC0000057')
+    bank_micr = models.CharField(max_length=50, default='400229013')
+
+    # Terms & Signatory
+    request_note = models.TextField(default='WE KINDLY REQUEST YOU TO ACKNOWLEDGE THE RECEIPT OF THE ABOVE PROFORMA INVOICE.')
+    signatory_company = models.CharField(max_length=200, default='MAXFLOW CONTROLS (I) PVT. LTD.')
+    signatory_name = models.CharField(max_length=100, default='Jitendra Desai')
+    signatory_designation = models.CharField(max_length=100, default='Manager-Sales (Mumbai)')
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_proformas')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Proforma Invoice"
+        verbose_name_plural = "Proforma Invoices"
+
+    def __str__(self):
+        return f"{self.proforma_number} - {self.customer_name}"
+
+    @property
+    def formatted_ref_text(self):
+        """Generates dynamic PO reference note if template placeholder is used. Formatted in capital letters for Proforma."""
+        from datetime import datetime
+        p_date = ''
+        if self.po_date:
+            if hasattr(self.po_date, 'strftime'):
+                p_date = self.po_date.strftime('%d/%m/%Y')
+            else:
+                try:
+                    str_val = str(self.po_date).strip()
+                    dt = datetime.strptime(str_val, '%Y-%m-%d').date()
+                    p_date = dt.strftime('%d/%m/%Y')
+                except Exception:
+                    p_date = str(self.po_date)
+
+        po_ref = (self.po_reference or 'VERBAL P.O. THROUGH EMAIL').strip().upper()
+        note = (self.subject_note or '').strip()
+
+        # If previous wording exists or blank, replace with master wording
+        if not note or 'Ref to your Purchase Order#:' in note:
+            note = "WE ACKNOWLEDGE WITH THANKS RECEIPT OF YOUR {po_reference} DT. {po_date}, PLEASE FIND BELOW OUR PROFORMA INVOICE FOR YOUR KIND REFERENCE."
+
+        # Case-insensitive replacement for placeholders
+        for ph in ['{po_reference}', '{PO_REFERENCE}', '{po_ref}', '{PO_REF}']:
+            note = note.replace(ph, po_ref)
+        for ph in ['{po_date}', '{PO_DATE}']:
+            note = note.replace(ph, p_date)
+
+        return note.strip().upper()
+
+    @property
+    def half_tax_rate(self):
+        """Half of tax rate for CGST/SGST display (e.g. 18% -> 9%)"""
+        rate = self.tax_rate if self.tax_rate else Decimal('18.00')
+        return rate / Decimal('2.00')
+
+    @property
+    def has_advance(self):
+        """Returns True if a valid positive advance amount is entered."""
+        try:
+            from decimal import Decimal
+            return bool(self.advance_amount and Decimal(str(self.advance_amount)) > Decimal('0.00'))
+        except Exception:
+            return False
+
+    @property
+    def advance_display_label(self):
+        """Formats advance received line, e.g. 'ADVANCE RECEIVED ON OUR A/C DT 13.03.26'"""
+        base = (self.advance_label or "ADVANCE RECEIVED IN OUR A/C").strip()
+        if self.advance_date:
+            from datetime import date, datetime
+            if hasattr(self.advance_date, 'strftime'):
+                d_formatted = self.advance_date.strftime('%d.%m.%y')
+                d_full = self.advance_date.strftime('%d.%m.%Y')
+            else:
+                try:
+                    str_val = str(self.advance_date).strip()
+                    dt = datetime.strptime(str_val, '%Y-%m-%d').date()
+                    d_formatted = dt.strftime('%d.%m.%y')
+                    d_full = dt.strftime('%d.%m.%Y')
+                except Exception:
+                    d_formatted = str(self.advance_date)
+                    d_full = d_formatted
+            date_str = f"DT {d_formatted}"
+            if date_str not in base and f"DT {d_full}" not in base:
+                return f"{base} {date_str}".strip()
+        return base
+
+    @property
+    def discount_display_label(self):
+        """Formats discount label, e.g. 'DISCOUNT 15% LESS'"""
+        if self.discount_percentage and self.discount_percentage > Decimal('0.00'):
+            pct = int(self.discount_percentage) if self.discount_percentage == int(self.discount_percentage) else self.discount_percentage
+            return f"DISCOUNT {pct}% LESS"
+        return "DISCOUNT LESS"
+
+    @property
+    def gst_display_label(self):
+        """Formats GST line, e.g. 'GST ADD @18%', 'GST ADD @12%', or 'GST ADD'"""
+        if self.tax_rate is not None and self.tax_rate > Decimal('0.00'):
+            pct = int(self.tax_rate) if self.tax_rate == int(self.tax_rate) else self.tax_rate
+            return f"GST ADD @{pct}%"
+        elif self.tax_amount and self.tax_amount > Decimal('0.00'):
+            return "GST ADD"
+        return "GST ADD @0%"
+
+
+    def recalculate_totals(self, commit=True):
+        """
+        Recalculates financial totals with exact 2-decimal precision:
+        1. Subtotal = sum of (qty * unit_rate)
+        2. Discount % / Discount Amount -> Subtotal after Discount
+        3. Taxable Amount = Subtotal after Discount + Freight
+        4. GST (Unified GST, customizable by rate % or manual amount)
+        5. Total = Taxable Amount + GST
+        6. Rounding Off Total = nearest whole rupee (round_off_amount = rounded_total - grand_total)
+        7. Advance Received -> Balance Amount Payable by You
+        8. Amount in words updated (balance if advance exists, else rounded total)
+        """
+        from decimal import Decimal, ROUND_HALF_UP
+
+        items = self.items.all()
+        calc_subtotal = Decimal('0.00')
+        for item in items:
+            qty = item.quantity if item.quantity is not None else Decimal('0.00')
+            rate = item.unit_rate if item.unit_rate is not None else Decimal('0.00')
+            item_amt = (Decimal(str(qty)) * Decimal(str(rate))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            calc_subtotal += item_amt
+
+        self.subtotal = calc_subtotal
+
+        # 2. Discount
+        disc_pct = Decimal(str(self.discount_percentage)) if self.discount_percentage else Decimal('0.00')
+        if disc_pct > Decimal('0.00'):
+            self.discount_amount = ((self.subtotal * disc_pct) / Decimal('100.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            disc = Decimal(str(self.discount_amount)) if self.discount_amount else Decimal('0.00')
+            self.discount_amount = disc.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        self.subtotal_after_discount = (self.subtotal - self.discount_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        if self.subtotal_after_discount < Decimal('0.00'):
+            self.subtotal_after_discount = Decimal('0.00')
+
+        # 3. Taxable Amount (Subtotal after discount - courier/freight charges removed)
+        self.freight_amount = Decimal('0.00')
+        self.taxable_amount = self.subtotal_after_discount
+
+        # 4. GST Tax (Unified GST without CGST/SGST split, customizable by user)
+        rate = Decimal(str(self.tax_rate)) if self.tax_rate is not None else Decimal('18.00')
+        if rate > Decimal('0.00'):
+            calc_tax = ((self.taxable_amount * rate) / Decimal('100.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            # If manual tax amount is provided and matches within tolerance (e.g. rate precision rounding)
+            if self.tax_amount and abs(self.tax_amount - calc_tax) <= Decimal('1.00'):
+                pass
+            else:
+                self.tax_amount = calc_tax
+        else:
+            tax = Decimal(str(self.tax_amount)) if self.tax_amount else Decimal('0.00')
+            self.tax_amount = tax.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        self.igst_amount = self.tax_amount
+        self.cgst_amount = Decimal('0.00')
+        self.sgst_amount = Decimal('0.00')
+
+        # 5. Grand Total (Before Rounding)
+        self.grand_total = (self.taxable_amount + self.tax_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        # 6. Rounding Off
+        if self.round_off_enabled:
+            self.rounded_total = self.grand_total.quantize(Decimal('1'), rounding=ROUND_HALF_UP).quantize(Decimal('0.01'))
+            self.round_off_amount = (self.rounded_total - self.grand_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            self.round_off_amount = Decimal('0.00')
+            self.rounded_total = self.grand_total
+
+        # 7. Advance & Balance
+        adv = Decimal(str(self.advance_amount)) if self.advance_amount else Decimal('0.00')
+        self.advance_amount = adv.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        self.balance_payable = (self.rounded_total - self.advance_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        # 8. Amount in words
+        final_for_words = self.balance_payable if self.advance_amount > Decimal('0.00') else self.rounded_total
+        self.amount_in_words = number_to_words_inr(final_for_words)
+
+        if commit:
+            self.save()
+
+
+class ProformaItem(models.Model):
+    proforma = models.ForeignKey(Proforma, related_name='items', on_delete=models.CASCADE)
+    sr_no = models.CharField(max_length=20, default='01.', verbose_name="Sr. #")
+    description = models.TextField(verbose_name="Item Description")
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'), verbose_name="Qty.")
+    unit = models.CharField(max_length=30, default='No', verbose_name="Unit")
+    unit_rate = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Unit Rate (Rs.)")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Amount (Rs.)")
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.sr_no} {self.description[:40]}"
+
+    @property
+    def qty_display(self):
+        """Formats quantity e.g. '01 No' or '5 PCS' like in the reference PDF."""
+        if self.quantity is None:
+            return ""
+        qty_int = int(self.quantity) if self.quantity == int(self.quantity) else self.quantity
+        if isinstance(qty_int, int) and 0 < qty_int < 10:
+            qty_str = f"{qty_int:02d}"
+        else:
+            qty_str = f"{qty_int}"
+        unit_str = f" {self.unit}" if self.unit else ""
+        return f"{qty_str}{unit_str}".strip()
+
+    def save(self, *args, **kwargs):
+        from decimal import Decimal
+        qty = self.quantity if self.quantity is not None else Decimal('0.00')
+        rate = self.unit_rate if self.unit_rate is not None else Decimal('0.00')
+        self.unit_rate = rate
+        self.amount = Decimal(str(qty)) * Decimal(str(rate))
+        super().save(*args, **kwargs)
+
 

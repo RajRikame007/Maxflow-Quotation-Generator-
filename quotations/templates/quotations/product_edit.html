@@ -71,4 +71,28 @@
         </div>
     </div>
 </div>
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const rateInput = document.getElementById('id_unit_rate');
+    if (rateInput) {
+        function formatRate() {
+            const raw = (rateInput.value || '').trim().replace(/,/g, '');
+            if (raw === '') {
+                rateInput.value = '';
+                return;
+            }
+            const num = parseFloat(raw);
+            if (!isNaN(num)) {
+                rateInput.value = num.toFixed(2);
+            }
+        }
+        rateInput.addEventListener('blur', formatRate);
+        rateInput.addEventListener('change', formatRate);
+        rateInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') formatRate();
+        });
+    }
+});
+</script>
 {% endblock %}

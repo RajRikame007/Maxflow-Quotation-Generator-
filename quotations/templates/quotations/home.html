@@ -22,7 +22,7 @@
     </div>
 
     <!-- Stats Cards -->
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card p-3 shadow-sm h-100">
             <div class="d-flex align-items-center">
                 <div class="rounded-circle bg-primary bg-opacity-10 p-3 text-primary me-3 fs-3">
@@ -36,29 +36,50 @@
         </div>
     </div>
 
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card p-3 shadow-sm h-100">
             <div class="d-flex align-items-center">
                 <div class="rounded-circle bg-success bg-opacity-10 p-3 text-success me-3 fs-3">
-                    <i class="bi bi-file-earmark-pdf"></i>
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
                 </div>
                 <div>
-                    <h6 class="text-muted mb-1">PDF Engine</h6>
-                    <h5 class="fw-bold mb-0 text-success">Active (xhtml2pdf)</h5>
+                    <h6 class="text-muted mb-1">Total Proformas</h6>
+                    <h3 class="fw-bold mb-0">{{ total_proformas }}</h3>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card p-3 shadow-sm h-100">
+            <div class="d-flex align-items-center">
+                <div class="rounded-circle bg-warning bg-opacity-10 p-3 text-warning me-3 fs-3">
+                    <i class="bi bi-calendar-check"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1">Proformas This Month</h6>
+                    <h3 class="fw-bold mb-0">{{ proformas_this_month }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
         <div class="card p-3 shadow-sm h-100">
             <div class="d-flex align-items-center">
                 <div class="rounded-circle bg-info bg-opacity-10 p-3 text-info me-3 fs-3">
-                    <i class="bi bi-database"></i>
+                    <i class="bi bi-clock-history"></i>
                 </div>
                 <div>
-                    <h6 class="text-muted mb-1">Database</h6>
-                    <h5 class="fw-bold mb-0">SQLite Local</h5>
+                    <h6 class="text-muted mb-1">Latest Proforma</h6>
+                    {% if latest_proforma %}
+                    <h6 class="fw-bold mb-0 font-monospace text-primary text-truncate" style="max-width: 140px;" title="{{ latest_proforma.proforma_number }}">
+                        <a href="{% url 'proforma_detail' latest_proforma.pk %}" class="text-decoration-none">{{ latest_proforma.proforma_number }}</a>
+                    </h6>
+                    <small class="text-muted">{{ latest_proforma.proforma_date|date:"d/m/Y" }}</small>
+                    {% else %}
+                    <h6 class="text-muted mb-0">None yet</h6>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -94,6 +115,9 @@
                                 <td class="fw-bold">₹ {{ q.grand_total|floatformat:2 }}</td>
                                 <td class="text-end pe-3">
                                     <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'proforma_generate_from_quotation' q.pk %}" class="btn btn-success" title="Generate Proforma">
+                                            <i class="bi bi-file-earmark-plus"></i> Proforma
+                                        </a>
                                         <a href="{% url 'quotation_detail' q.pk %}" class="btn btn-outline-secondary" title="View Preview">
                                             <i class="bi bi-eye"></i> View
                                         </a>
@@ -120,5 +144,79 @@
             </div>
         </div>
     </div>
+
+    <!-- Recent Proforma Invoices List -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center py-3 bg-white">
+                <h5 class="card-title mb-0 fw-bold"><i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Recent Proforma Invoices</h5>
+                <a href="{% url 'proforma_list' %}" class="btn btn-outline-success btn-sm">View All Proformas</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 table-custom">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">Proforma No.</th>
+                                <th>Customer Name</th>
+                                <th>Source Quotation</th>
+                                <th>Date</th>
+                                <th>Total Amount</th>
+                                <th>Status</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in recent_proformas %}
+                            <tr>
+                                <td class="ps-3 font-monospace fw-semibold text-primary">
+                                    <a href="{% url 'proforma_detail' p.pk %}" class="text-decoration-none">{{ p.proforma_number }}</a>
+                                </td>
+                                <td>{{ p.customer_name }}</td>
+                                <td>
+                                    {% if p.quotation %}
+                                    <a href="{% url 'quotation_detail' p.quotation.pk %}" class="badge bg-light text-primary border text-decoration-none">
+                                        {{ p.quotation_number_ref }}
+                                    </a>
+                                    {% else %}
+                                    <span class="text-muted small">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ p.proforma_date|date:"d-m-Y" }}</td>
+                                <td class="fw-bold text-dark">₹ {{ p.grand_total|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge {% if p.status == 'Final' %}bg-success{% elif p.status == 'Draft' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {{ p.status }}
+                                    </span>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'proforma_detail' p.pk %}" class="btn btn-outline-secondary" title="View Preview">
+                                            <i class="bi bi-eye"></i> View
+                                        </a>
+                                        <a href="{% url 'proforma_pdf_download' p.pk %}" class="btn btn-outline-danger" title="Download PDF">
+                                            <i class="bi bi-file-pdf"></i> PDF
+                                        </a>
+                                        <a href="{% url 'proforma_edit' p.pk %}" class="btn btn-outline-primary" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    <i class="bi bi-inbox fs-2 d-block mb-1"></i>
+                                    No Proforma Invoices created yet. Click "Proforma" on any quotation above to generate one!
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}

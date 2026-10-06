@@ -20,7 +20,14 @@ CSRF_TRUSTED_ORIGINS = [
     'http://192.168.1.23:8000',
     'http://192.168.1.47:8000',
     'https://*.pythonanywhere.com',
+    'https://*.trycloudflare.com',
+    'http://*.trycloudflare.com',
 ]
+
+# Required for Cloudflare Tunnel / reverse proxies terminating HTTPS:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
 
 # Application definition
 INSTALLED_APPS = [
@@ -30,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',
     'quotations',
 ]
 

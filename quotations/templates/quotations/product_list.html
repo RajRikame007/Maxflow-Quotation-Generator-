@@ -284,7 +284,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">Unit Rate (₹)</label>
-                            <input type="number" step="0.01" min="0" name="unit_rate" id="edit_prod_unit_rate" class="form-control" placeholder="0.00">
+                            <input type="text" inputmode="decimal" autocomplete="off" name="unit_rate" id="edit_prod_unit_rate" class="form-control item-rate" placeholder="0.00">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-semibold">Unit</label>
@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('edit_prod_model_code').value = prodCode;
                 document.getElementById('edit_prod_category').value = prodCategory;
                 document.getElementById('edit_prod_description').value = prodDesc;
-                document.getElementById('edit_prod_unit_rate').value = prodRate;
+                document.getElementById('edit_prod_unit_rate').value = (prodRate && parseFloat(prodRate) > 0) ? parseFloat(prodRate).toFixed(2) : '';
                 document.getElementById('edit_prod_unit').value = prodUnit;
                 document.getElementById('edit_prod_hsn_code').value = prodHsn;
                 document.getElementById('edit_prod_gst_rate').value = prodGst;
@@ -644,6 +644,28 @@ document.addEventListener('DOMContentLoaded', function () {
             confirmDeleteBtn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Delete from Master & Excel';
             alert('Network error while deleting product: ' + err.message);
         });
+    });
+
+    // Auto-format unit rate fields with .00 after entering amount
+    function formatProductRate(el) {
+        if (!el) return;
+        const raw = (el.value || '').trim().replace(/,/g, '');
+        if (raw === '') {
+            el.value = '';
+            return;
+        }
+        const num = parseFloat(raw);
+        if (!isNaN(num)) {
+            el.value = num.toFixed(2);
+        }
+    }
+    const addRateInput = document.getElementById('id_unit_rate');
+    const editRateInput = document.getElementById('edit_prod_unit_rate');
+    [addRateInput, editRateInput].forEach(inp => {
+        if (!inp) return;
+        inp.addEventListener('blur', function () { formatProductRate(this); });
+        inp.addEventListener('change', function () { formatProductRate(this); });
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') formatProductRate(this); });
     });
 });
 </script>

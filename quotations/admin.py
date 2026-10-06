@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Quotation, QuotationItem, Product, Customer, UserProfile
+from .models import Quotation, QuotationItem, Product, Customer, UserProfile, Proforma, ProformaItem
+
 
 class QuotationItemInline(admin.TabularInline):
     model = QuotationItem
@@ -54,4 +55,18 @@ admin.site.register(User, CustomUserAdmin)
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ('user', 'designation', 'phone')
     search_fields = ('user__username', 'user__first_name', 'user__last_name', 'designation', 'phone')
+
+
+class ProformaItemInline(admin.TabularInline):
+    model = ProformaItem
+    extra = 1
+
+
+@admin.register(Proforma)
+class ProformaAdmin(admin.ModelAdmin):
+    list_display = ('proforma_number', 'customer_name', 'quotation_number_ref', 'proforma_date', 'status', 'grand_total', 'created_at')
+    search_fields = ('proforma_number', 'customer_name', 'quotation_number_ref', 'signatory_name')
+    list_filter = ('status', 'tax_type', 'proforma_date', 'created_at')
+    inlines = [ProformaItemInline]
+
 
