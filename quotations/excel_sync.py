@@ -57,29 +57,25 @@ def append_or_update_customer_in_excel(customer, original_name=None, filename='c
         target_name_lower = customer.name.strip().lower()
         target_gstin_clean = customer.gstin.strip().upper() if customer.gstin and customer.gstin.strip().upper() not in ('', 'NIL', 'N/A') else None
 
-        # 1. Search by original_name if provided
-        if orig_name_lower:
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                val = sheet.cell(row=r, column=col_indices['name']).value
-                if val and str(val).strip().lower() == orig_name_lower:
-                    target_row = r
-                    break
+        name_c = col_indices['name'] - 1
+        gstin_c = col_indices.get('gstin', 4) - 1
+        gstin_match_row = None
 
-        # 2. Search by current customer name
-        if not target_row:
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                val = sheet.cell(row=r, column=col_indices['name']).value
-                if val and str(val).strip().lower() == target_name_lower:
-                    target_row = r
-                    break
+        for r_idx, row in enumerate(sheet.iter_rows(min_row=header_row_idx + 1, values_only=True), start=header_row_idx + 1):
+            val_name = str(row[name_c] or '').strip().lower() if len(row) > name_c else ''
+            if orig_name_lower and val_name == orig_name_lower:
+                target_row = r_idx
+                break
+            if val_name == target_name_lower:
+                target_row = r_idx
+                break
+            if not gstin_match_row and target_gstin_clean and len(row) > gstin_c:
+                val_gstin = str(row[gstin_c] or '').strip().upper()
+                if val_gstin == target_gstin_clean:
+                    gstin_match_row = r_idx
 
-        # 3. Fallback: match by GSTIN if available
-        if not target_row and target_gstin_clean and 'gstin' in col_indices:
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                val = sheet.cell(row=r, column=col_indices['gstin']).value
-                if val and str(val).strip().upper() == target_gstin_clean:
-                    target_row = r
-                    break
+        if not target_row and gstin_match_row:
+            target_row = gstin_match_row
 
         is_new_row = False
         if not target_row:
@@ -307,29 +303,22 @@ def append_or_update_product_in_excel(product, original_code=None, filename='Pro
         target_row = None
         orig_code_lower = original_code.strip().lower() if original_code else None
         target_code_lower = product.model_code.strip().lower()
+        code_c = col_indices['model_code'] - 1
+        last_used_row = header_row_idx
 
-        # 1. Search by original_code if provided
-        if orig_code_lower:
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                val = sheet.cell(row=r, column=col_indices['model_code']).value
-                if val and str(val).strip().lower() == orig_code_lower:
-                    target_row = r
-                    break
-
-        # 2. Search by current model_code
-        if not target_row:
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                val = sheet.cell(row=r, column=col_indices['model_code']).value
-                if val and str(val).strip().lower() == target_code_lower:
-                    target_row = r
-                    break
+        for r_idx, row in enumerate(sheet.iter_rows(min_row=header_row_idx + 1, values_only=True), start=header_row_idx + 1):
+            if any(cell is not None and str(cell).strip() != '' for cell in row[:max(4, len(row))]):
+                last_used_row = r_idx
+            val_code = str(row[code_c] or '').strip().lower() if len(row) > code_c else ''
+            if orig_code_lower and val_code == orig_code_lower:
+                target_row = r_idx
+                break
+            if val_code == target_code_lower:
+                target_row = r_idx
+                break
 
         is_new_row = False
         if not target_row:
-            last_used_row = header_row_idx
-            for r in range(header_row_idx + 1, sheet.max_row + 1):
-                if any(sheet.cell(row=r, column=c).value is not None and str(sheet.cell(row=r, column=c).value).strip() != '' for c in range(1, max(4, sheet.max_column + 1))):
-                    last_used_row = r
             target_row = last_used_row + 1
             is_new_row = True
 

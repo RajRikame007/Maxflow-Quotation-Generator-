@@ -220,7 +220,11 @@ def sync_quotation_customer_to_master(customer_name, customer_address='', custom
             gstin=(customer_gstin or '').strip(),
         )
 
-    excel_saved, excel_msg = append_or_update_customer_in_excel(customer, original_name=original_name)
+    try:
+        excel_saved, excel_msg = append_or_update_customer_in_excel(customer, original_name=original_name)
+    except Exception as e:
+        excel_saved = False
+        excel_msg = f"Excel update skipped: {e}"
     global LAST_EXCEL_SYNC_MTIME
     excel_path = os.path.join(settings.BASE_DIR, 'customer address raj.xlsx')
     if os.path.exists(excel_path):
@@ -237,8 +241,6 @@ def resequence_quotation_items(quotation):
 @login_required
 def quotation_create(request):
     """Create a new quotation with dynamic item rows and auto-populated signatory name."""
-    auto_sync_excel_if_modified()
-    auto_sync_product_excel_if_modified()
     total_customers_count = Customer.objects.filter(is_active=True).count()
     initial_customers = list(Customer.objects.filter(is_active=True).order_by('name')[:30])
     brands = [b for b in Product.objects.filter(is_active=True).values_list('category', flat=True).distinct().order_by('category') if b]
@@ -330,8 +332,6 @@ def quotation_create(request):
 @login_required
 def quotation_edit(request, pk):
     """Edit an existing quotation."""
-    auto_sync_excel_if_modified()
-    auto_sync_product_excel_if_modified()
     quotation = get_object_or_404(Quotation, pk=pk)
     total_customers_count = Customer.objects.filter(is_active=True).count()
     initial_customers = list(Customer.objects.filter(is_active=True).order_by('name')[:30])
@@ -391,7 +391,6 @@ def quotation_edit(request, pk):
 def customer_list(request):
     """Customer Directory view to search and manage customers."""
     from django.core.paginator import Paginator
-    auto_sync_excel_if_modified()
     query = request.GET.get('q', '').strip()
     if query:
         customers_qs = Customer.objects.filter(
@@ -424,7 +423,11 @@ def customer_create(request):
         form = CustomerForm(request.POST)
         if form.is_valid():
             customer = form.save()
-            excel_saved, excel_msg = append_or_update_customer_in_excel(customer)
+            try:
+                excel_saved, excel_msg = append_or_update_customer_in_excel(customer)
+            except Exception as e:
+                excel_saved = False
+                excel_msg = f"Excel update skipped: {e}"
 
             global LAST_EXCEL_SYNC_MTIME
             excel_path = os.path.join(settings.BASE_DIR, 'customer address raj.xlsx')
@@ -504,7 +507,11 @@ def customer_edit(request, pk):
         form = CustomerForm(request.POST, instance=customer)
         if form.is_valid():
             customer = form.save()
-            excel_saved, excel_msg = append_or_update_customer_in_excel(customer, original_name=original_name)
+            try:
+                excel_saved, excel_msg = append_or_update_customer_in_excel(customer, original_name=original_name)
+            except Exception as e:
+                excel_saved = False
+                excel_msg = f"Excel update skipped: {e}"
 
             global LAST_EXCEL_SYNC_MTIME
             excel_path = os.path.join(settings.BASE_DIR, 'customer address raj.xlsx')
@@ -615,7 +622,6 @@ def customer_sync_excel(request):
 @login_required
 def customer_search_api(request):
     """JSON API to search customers dynamically."""
-    auto_sync_excel_if_modified()
     query = request.GET.get('q', '').strip()
 
 
@@ -766,7 +772,6 @@ def product_search_api(request):
     Supports filtering by query (?q=...) and brand (?brand=...).
     Returns top 50 ranked matches.
     """
-    auto_sync_product_excel_if_modified()
     query = request.GET.get('q', '').strip()
     brand = request.GET.get('brand', '').strip()
 
@@ -798,7 +803,6 @@ def product_search_api(request):
 def product_list(request):
     """Directory view for Product List.xlsx with fast flexible search and brand filtering."""
     from django.core.paginator import Paginator
-    auto_sync_product_excel_if_modified()
     query = request.GET.get('q', '').strip()
     brand_filter = request.GET.get('brand', '').strip()
 
