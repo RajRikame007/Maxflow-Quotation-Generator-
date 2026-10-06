@@ -177,7 +177,7 @@ class QuotationForm(forms.ModelForm):
             'salutation': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. DEAR SIR,'}),
             'subject': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Subject or opening quotation line'}),
 
-            'customer_name': forms.TextInput(attrs={'class': 'form-control fw-bold', 'placeholder': 'e.g. JSW STEEL COATED PRODUCTS LIMITED', 'list': 'customer-name-datalist', 'autocomplete': 'off'}),
+            'customer_name': forms.TextInput(attrs={'class': 'form-control fw-bold', 'placeholder': 'e.g. JSW STEEL COATED PRODUCTS LIMITED', 'autocomplete': 'off', 'list': 'customer-name-datalist'}),
             'customer_address': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Customer Address & Plant Location'}),
 
             'customer_phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Customer Phone'}),

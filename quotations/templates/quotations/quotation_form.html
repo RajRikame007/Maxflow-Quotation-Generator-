@@ -142,9 +142,13 @@
                                     </div>
 
                                 </div>
+                                <div class="input-group input-group-sm mb-1">
+                                    <span class="input-group-text bg-white border-end-0 text-muted py-0 px-2"><i class="bi bi-search small"></i></span>
+                                    <input type="text" class="form-control form-control-sm border-start-0 py-1" id="customer-search-filter" placeholder="Type to search all {{ total_customers_count }} customers..." autocomplete="off">
+                                </div>
                                 <select class="form-select form-select-sm text-primary fw-semibold" id="customer-quick-select" onchange="autoFillCustomerFromSelect(this)">
-                                    <option value="">⚡ -- Select Customer from Excel ({{ customers|length }}) --</option>
-                                    {% for cust in customers %}
+                                    <option value="">⚡ -- Select Customer from Excel ({{ total_customers_count }}) --</option>
+                                    {% for cust in initial_customers %}
                                     <option value="{{ cust.name }}" 
                                             data-id="{{ cust.id }}"
                                             data-name="{{ cust.name }}" 
@@ -159,7 +163,7 @@
                             </div>
 
                             <datalist id="customer-name-datalist">
-                                {% for cust in customers %}
+                                {% for cust in initial_customers %}
                                 <option value="{{ cust.name }}">{{ cust.name }} | {{ cust.address|truncatechars:35 }}</option>
                                 {% endfor %}
                             </datalist>
@@ -618,8 +622,9 @@
 <script>
     // Customer Master Catalog for live search and instant auto-fill
     window.CUSTOMERS_CATALOG = {
-        {% for cust in customers %}
+        {% for cust in initial_customers %}
         "{{ cust.name|escapejs }}": {
+            id: "{{ cust.id }}",
             name: "{{ cust.name|escapejs }}",
             address: "{{ cust.address|default:''|escapejs }}",
             phone: "{{ cust.mobile|default:''|escapejs }}",
@@ -710,12 +715,14 @@
         const badge = document.getElementById('customer-autofill-badge');
         const editBtn = document.getElementById('edit-selected-customer-btn');
 
+        const searchInput = document.getElementById('customer-search-filter');
         if (nameInput) nameInput.value = '';
         if (addrInput) addrInput.value = '';
         if (phoneInput) phoneInput.value = '';
         if (emailInput) emailInput.value = '';
         if (gstinInput) gstinInput.value = '';
         if (selectEl) selectEl.value = '';
+        if (searchInput) searchInput.value = '';
         if (badge) badge.classList.add('d-none');
         if (editBtn) editBtn.style.display = 'none';
 
@@ -1280,26 +1287,122 @@
             }
         }
 
-        // Auto-match when typing directly into Customer Name input
+        // Debounced Live Customer Search for Filter Input
+        let customerFilterTimeout = null;
+        const customerFilterInput = document.getElementById('customer-search-filter');
+        if (customerFilterInput) {
+            customerFilterInput.addEventListener('input', function() {
+                clearTimeout(customerFilterTimeout);
+                const query = (this.value || '').trim();
+                customerFilterTimeout = setTimeout(() => {
+                    fetch(`/api/customers/search/?q=${encodeURIComponent(query)}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        const list = data.customers || [];
+                        const selectEl = document.getElementById('customer-quick-select');
+                        if (selectEl) {
+                            selectEl.innerHTML = '';
+                            const defaultOpt = document.createElement('option');
+                            defaultOpt.value = '';
+                            defaultOpt.textContent = query 
+                                ? `⚡ -- Results for "${query}" (${list.length}) --` 
+                                : `⚡ -- Select Customer (${list.length}) --`;
+                            selectEl.appendChild(defaultOpt);
+                            list.forEach(c => {
+                                window.CUSTOMERS_CATALOG[c.name] = c;
+                                const opt = document.createElement('option');
+                                opt.value = c.name;
+                                opt.textContent = c.name + (c.gstin ? ` (GST: ${c.gstin})` : '');
+                                opt.setAttribute('data-id', c.id);
+                                opt.setAttribute('data-name', c.name);
+                                opt.setAttribute('data-address', c.address || '');
+                                opt.setAttribute('data-phone', c.phone || '');
+                                opt.setAttribute('data-email', c.email || '');
+                                opt.setAttribute('data-gstin', c.gstin || '');
+                                selectEl.appendChild(opt);
+                            });
+                        }
+                        const datalistEl = document.getElementById('customer-name-datalist');
+                        if (datalistEl && list.length > 0) {
+                            datalistEl.innerHTML = '';
+                            list.forEach(c => {
+                                const opt = document.createElement('option');
+                                opt.value = c.name;
+                                opt.textContent = `${c.name} | ${(c.address || '').slice(0, 35)}`;
+                                datalistEl.appendChild(opt);
+                            });
+                        }
+                    })
+                    .catch(err => console.error('Customer filter error:', err));
+                }, 300);
+            });
+        }
+
+        // Auto-match when typing directly into Customer Name input with debounced API lookup
+        let customerNameLookupTimeout = null;
         const nameInput = document.getElementById('id_customer_name');
         if (nameInput) {
-            const handleCustomerMatch = function () {
+            const handleCustomerMatch = function (e) {
                 const val = (nameInput.value || '').trim();
                 if (!val) {
                     if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
                     return;
                 }
 
+                // Check existing in catalog first
+                let matched = null;
                 for (const key in window.CUSTOMERS_CATALOG) {
                     if (key.toLowerCase() === val.toLowerCase()) {
-                        const data = window.CUSTOMERS_CATALOG[key];
-                        populateCustomerData(data.name, data.address, data.phone, data.email, data.gstin);
-                        const selectEl = document.getElementById('customer-quick-select');
-                        if (selectEl) selectEl.value = key;
+                        matched = window.CUSTOMERS_CATALOG[key];
                         break;
                     }
                 }
-                if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
+
+                if (matched) {
+                    populateCustomerData(matched.name, matched.address, matched.phone, matched.email, matched.gstin);
+                    const selectEl = document.getElementById('customer-quick-select');
+                    if (selectEl) selectEl.value = matched.name;
+                    if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
+                    return;
+                }
+
+                // If not yet matched, debounce query API for suggestions and catalog update
+                if (e && e.type === 'input') {
+                    clearTimeout(customerNameLookupTimeout);
+                    customerNameLookupTimeout = setTimeout(() => {
+                        const currentVal = (nameInput.value || '').trim();
+                        if (currentVal.length < 2) return;
+                        fetch(`/api/customers/search/?q=${encodeURIComponent(currentVal)}`, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            const list = data.customers || [];
+                            const datalistEl = document.getElementById('customer-name-datalist');
+                            if (datalistEl) {
+                                datalistEl.innerHTML = '';
+                                list.forEach(c => {
+                                    window.CUSTOMERS_CATALOG[c.name] = c;
+                                    const opt = document.createElement('option');
+                                    opt.value = c.name;
+                                    opt.textContent = `${c.name} | ${(c.address || '').slice(0, 35)}`;
+                                    datalistEl.appendChild(opt);
+                                });
+                            }
+                            const updatedVal = (nameInput.value || '').trim().toLowerCase();
+                            const exact = list.find(c => c.name.toLowerCase() === updatedVal);
+                            if (exact) {
+                                populateCustomerData(exact.name, exact.address, exact.phone, exact.email, exact.gstin);
+                                const selectEl = document.getElementById('customer-quick-select');
+                                if (selectEl) selectEl.value = exact.name;
+                            }
+                            if (typeof updateCustomerSyncStatus === 'function') updateCustomerSyncStatus();
+                        })
+                        .catch(() => {});
+                    }, 300);
+                }
             };
             nameInput.addEventListener('input', handleCustomerMatch);
             nameInput.addEventListener('change', handleCustomerMatch);

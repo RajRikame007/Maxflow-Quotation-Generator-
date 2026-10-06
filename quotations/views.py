@@ -239,7 +239,8 @@ def quotation_create(request):
     """Create a new quotation with dynamic item rows and auto-populated signatory name."""
     auto_sync_excel_if_modified()
     auto_sync_product_excel_if_modified()
-    customers = Customer.objects.filter(is_active=True).order_by('name')
+    total_customers_count = Customer.objects.filter(is_active=True).count()
+    initial_customers = list(Customer.objects.filter(is_active=True).order_by('name')[:30])
     brands = [b for b in Product.objects.filter(is_active=True).values_list('category', flat=True).distinct().order_by('category') if b]
     initial_products = Product.objects.filter(is_active=True)[:30]
 
@@ -285,6 +286,8 @@ def quotation_create(request):
         if customer_id:
             try:
                 cust = Customer.objects.get(pk=customer_id)
+                if not any(c.id == cust.id for c in initial_customers):
+                    initial_customers.insert(0, cust)
                 initial_data['customer_name'] = cust.name
                 initial_data['customer_address'] = cust.address
                 initial_data['customer_phone'] = cust.mobile
@@ -317,7 +320,9 @@ def quotation_create(request):
         'formset': formset,
         'products': initial_products,
         'brands': brands,
-        'customers': customers,
+        'customers': initial_customers,
+        'initial_customers': initial_customers,
+        'total_customers_count': total_customers_count,
         'customer_form': CustomerForm(),
         'title': 'Create New Quotation'
     })
@@ -328,7 +333,12 @@ def quotation_edit(request, pk):
     auto_sync_excel_if_modified()
     auto_sync_product_excel_if_modified()
     quotation = get_object_or_404(Quotation, pk=pk)
-    customers = Customer.objects.filter(is_active=True).order_by('name')
+    total_customers_count = Customer.objects.filter(is_active=True).count()
+    initial_customers = list(Customer.objects.filter(is_active=True).order_by('name')[:30])
+    if quotation.customer_name:
+        existing_cust = Customer.objects.filter(name__iexact=quotation.customer_name.strip(), is_active=True).first()
+        if existing_cust and not any(c.id == existing_cust.id for c in initial_customers):
+            initial_customers.insert(0, existing_cust)
     brands = [b for b in Product.objects.filter(is_active=True).values_list('category', flat=True).distinct().order_by('category') if b]
     initial_products = Product.objects.filter(is_active=True)[:30]
 
@@ -370,7 +380,9 @@ def quotation_edit(request, pk):
         'quotation': quotation,
         'products': initial_products,
         'brands': brands,
-        'customers': customers,
+        'customers': initial_customers,
+        'initial_customers': initial_customers,
+        'total_customers_count': total_customers_count,
         'customer_form': CustomerForm(),
         'title': f'Edit Quotation: {quotation.quotation_number}'
     })
@@ -378,24 +390,31 @@ def quotation_edit(request, pk):
 @login_required
 def customer_list(request):
     """Customer Directory view to search and manage customers."""
+    from django.core.paginator import Paginator
     auto_sync_excel_if_modified()
     query = request.GET.get('q', '').strip()
     if query:
-        customers = Customer.objects.filter(
+        customers_qs = Customer.objects.filter(
             Q(name__icontains=query) |
             Q(gstin__icontains=query) |
             Q(address__icontains=query) |
             Q(mobile__icontains=query) |
             Q(email__icontains=query)
-        )
+        ).order_by('name')
     else:
-        customers = Customer.objects.all().order_by('name')
+        customers_qs = Customer.objects.all().order_by('name')
+
+    total_count = customers_qs.count()
+    paginator = Paginator(customers_qs, 50)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
 
     return render(request, 'quotations/customer_list.html', {
-        'customers': customers,
+        'page_obj': page_obj,
+        'customers': page_obj,
         'customer_form': CustomerForm(),
         'query': query,
-        'total_count': Customer.objects.count()
+        'total_count': total_count,
     })
 
 @login_required
