@@ -1063,7 +1063,7 @@
     if (modalSearchInputEl) {
         modalSearchInputEl.addEventListener('input', function() {
             clearTimeout(modalSearchTimeout);
-            modalSearchTimeout = setTimeout(runModalProductSearch, 200);
+            modalSearchTimeout = setTimeout(runModalProductSearch, 300);
         });
     }
 
@@ -1166,7 +1166,7 @@
         clearTimeout(liveAutocompleteTimeout);
         const query = (input.value || '').trim();
 
-        if (query.length < 1) {
+        if (query.length < 2) {
             dropdown.classList.add('d-none');
             dropdown.innerHTML = '';
             return;
@@ -1204,7 +1204,7 @@
                 .catch(err => {
                     console.error("Autocomplete search error:", err);
                 });
-        }, 220);
+        }, 300);
     });
 
     // Handle click on live autocomplete option
@@ -1236,13 +1236,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('textarea.item-desc').forEach(autoResizeTextarea);
 
-        const modalInput = document.getElementById('modal-product-search-input');
-        if (modalInput) {
-            modalInput.addEventListener('input', function () {
-                clearTimeout(modalSearchTimeout);
-                modalSearchTimeout = setTimeout(runModalProductSearch, 250);
-            });
-        }
+        // Modal search listener is initialized above
     });
 </script>
 <script src="/static/js/quotation_calc.js"></script>

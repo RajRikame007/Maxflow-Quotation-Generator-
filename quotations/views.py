@@ -132,19 +132,29 @@ def home(request):
 @login_required
 def quotation_list(request):
     """List all quotations with search and action options."""
+    from django.core.paginator import Paginator
+    from django.db.models import Count
     query = request.GET.get('q', '').strip()
     if query:
-        quotations = Quotation.objects.filter(
-            quotation_number__icontains=query
-        ) | Quotation.objects.filter(
-            customer_name__icontains=query
+        quotations_qs = Quotation.objects.filter(
+            Q(quotation_number__icontains=query) |
+            Q(customer_name__icontains=query)
         )
     else:
-        quotations = Quotation.objects.all()
+        quotations_qs = Quotation.objects.all()
+
+    quotations_qs = quotations_qs.annotate(item_count=Count('items')).order_by('-created_at')
+
+    total_count = quotations_qs.count()
+    paginator = Paginator(quotations_qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
 
     return render(request, 'quotations/quotation_list.html', {
-        'quotations': quotations,
+        'page_obj': page_obj,
+        'quotations': page_obj,
         'query': query,
+        'total_count': total_count,
     })
 
 LAST_EXCEL_SYNC_MTIME = 0
@@ -1220,15 +1230,17 @@ def proforma_edit(request, pk):
         form = ProformaForm(instance=proforma)
         formset = ProformaItemFormSet(instance=proforma)
 
-    customers = Customer.objects.filter(is_active=True)
-    products = Product.objects.filter(is_active=True)
+    initial_customers = list(Customer.objects.filter(is_active=True).order_by('name')[:30])
+    if proforma.customer_name:
+        existing_cust = Customer.objects.filter(name__iexact=proforma.customer_name.strip(), is_active=True).first()
+        if existing_cust and not any(c.id == existing_cust.id for c in initial_customers):
+            initial_customers.insert(0, existing_cust)
 
     return render(request, 'quotations/proforma_form.html', {
         'form': form,
         'formset': formset,
         'proforma': proforma,
-        'customers': customers,
-        'products': products,
+        'customers': initial_customers,
         'title': f'Edit Proforma: {proforma.proforma_number}',
     })
 
@@ -1259,15 +1271,18 @@ def proforma_list(request):
     Proforma History / Tracking view.
     Includes search, filtering by date, status, customer, and action buttons.
     """
+    from django.core.paginator import Paginator
+    from django.db.models import Count
+
     query = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '').strip()
     date_from = request.GET.get('date_from', '').strip()
     date_to = request.GET.get('date_to', '').strip()
 
-    proformas = Proforma.objects.all()
+    proformas_qs = Proforma.objects.select_related('quotation')
 
     if query:
-        proformas = proformas.filter(
+        proformas_qs = proformas_qs.filter(
             Q(proforma_number__icontains=query) |
             Q(customer_name__icontains=query) |
             Q(quotation_number_ref__icontains=query) |
@@ -1275,18 +1290,24 @@ def proforma_list(request):
         )
 
     if status_filter:
-        proformas = proformas.filter(status=status_filter)
+        proformas_qs = proformas_qs.filter(status=status_filter)
 
     if date_from:
-        proformas = proformas.filter(proforma_date__gte=date_from)
+        proformas_qs = proformas_qs.filter(proforma_date__gte=date_from)
 
     if date_to:
-        proformas = proformas.filter(proforma_date__lte=date_to)
+        proformas_qs = proformas_qs.filter(proforma_date__lte=date_to)
 
-    total_count = proformas.count()
+    proformas_qs = proformas_qs.annotate(item_count=Count('items')).order_by('-created_at')
+
+    total_count = proformas_qs.count()
+    paginator = Paginator(proformas_qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
 
     return render(request, 'quotations/proforma_list.html', {
-        'proformas': proformas,
+        'page_obj': page_obj,
+        'proformas': page_obj,
         'query': query,
         'status_filter': status_filter,
         'date_from': date_from,

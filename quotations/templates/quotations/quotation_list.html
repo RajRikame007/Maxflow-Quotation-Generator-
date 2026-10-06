@@ -53,7 +53,7 @@
                         <tbody>
                             {% for q in quotations %}
                             <tr>
-                                <td class="ps-3 text-muted">{{ forloop.counter }}</td>
+                                <td class="ps-3 text-muted">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                                 <td class="font-monospace fw-bold text-primary">
                                     <a href="{% url 'quotation_detail' q.pk %}" class="text-decoration-none">{{ q.quotation_number }}</a>
                                 </td>
@@ -62,7 +62,7 @@
                                     {% if q.customer_phone %}<small class="text-muted">{{ q.customer_phone }}</small>{% endif %}
                                 </td>
                                 <td>{{ q.quotation_date|date:"d M Y" }}</td>
-                                <td><span class="badge bg-light text-dark border">{{ q.items.count }} item(s)</span></td>
+                                <td><span class="badge bg-light text-dark border">{{ q.item_count|default:q.items.count }} item(s)</span></td>
                                 <td class="fw-bold text-dark">₹ {{ q.grand_total|floatformat:2 }}</td>
                                 <td class="text-end pe-3">
                                     <div class="btn-group btn-group-sm">
@@ -101,6 +101,44 @@
                     </table>
                 </div>
             </div>
+            {% if page_obj.has_other_pages %}
+            <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="text-muted small">
+                    Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total_count }} quotations
+                </span>
+                <nav aria-label="Quotations pagination">
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page=1" title="First">&laquo; First</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; First</span></li>
+                        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                        {% endif %}
+
+                        <li class="page-item active">
+                            <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        </li>
+
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}page={{ page_obj.paginator.num_pages }}" title="Last">Last &raquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Next</span></li>
+                        <li class="page-item disabled"><span class="page-link">Last &raquo;</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -80,7 +80,7 @@
                         <tbody>
                             {% for p in proformas %}
                             <tr>
-                                <td class="ps-3 text-muted small">{{ forloop.counter }}</td>
+                                <td class="ps-3 text-muted small">{{ page_obj.start_index|add:forloop.counter0 }}</td>
                                 <td class="font-monospace fw-bold text-primary">
                                     <a href="{% url 'proforma_detail' p.pk %}" class="text-decoration-none">{{ p.proforma_number }}</a>
                                 </td>
@@ -101,7 +101,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge bg-light text-dark border">{{ p.items.count }} item(s)</span>
+                                    <span class="badge bg-light text-dark border">{{ p.item_count|default:p.items.count }} item(s)</span>
                                 </td>
                                 <td class="fw-bold text-dark">₹ {{ p.grand_total|floatformat:2 }}</td>
                                 <td>
@@ -142,6 +142,44 @@
                     </table>
                 </div>
             </div>
+            {% if page_obj.has_other_pages %}
+            <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="text-muted small">
+                    Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total_count }} Proforma Invoices
+                </span>
+                <nav aria-label="Proforma pagination">
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page=1" title="First">&laquo; First</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; First</span></li>
+                        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                        {% endif %}
+
+                        <li class="page-item active">
+                            <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        </li>
+
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if query %}q={{ query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.paginator.num_pages }}" title="Last">Last &raquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Next</span></li>
+                        <li class="page-item disabled"><span class="page-link">Last &raquo;</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
