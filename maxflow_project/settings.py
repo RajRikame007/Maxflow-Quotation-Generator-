@@ -93,6 +93,14 @@ TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
+DATE_INPUT_FORMATS = [
+    '%Y-%m-%d',               # '2026-10-06'
+    '%d/%m/%Y', '%d/%m/%y',   # '06/10/2026', '06/10/26'
+    '%d-%m-%Y', '%d-%m-%y',   # '06-10-2026', '06-10-26'
+    '%d.%m.%Y', '%d.%m.%y',   # '06.10.2026', '06.10.26'
+    '%m/%d/%Y', '%m/%d/%y',
+]
+
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [

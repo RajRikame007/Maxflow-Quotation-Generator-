@@ -307,7 +307,7 @@
         <tbody>
             {% for item in items %}
             <tr>
-                <td align="center" style="font-weight: bold;">{{ forloop.counter }}</td>
+                <td align="center" style="font-weight: bold;">{{ item.sr_no|default:forloop.counter }}</td>
                 <td align="left">
                     <b>{{ item.description|linebreaksbr }}</b>
                 </td>
@@ -372,6 +372,9 @@
         </tr>
     </table>
 
+    <!-- Page Break: Page 1 ends at Bank Details; Page 2 contains Terms & Conditions and Authorized Signatory -->
+    <pdf:nextpage />
+
     <!-- Terms and Conditions Boxed -->
     <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #000000; margin-top: 4px; margin-bottom: 6px;">
         <tr>
@@ -386,7 +389,7 @@
                     <div class="terms-item"><b>6) DESPATCH :</b> As suggested by you. Road / Air / Courier</div>
                     <div class="terms-item"><b>7) INSURANCE :</b> In your scope. You are requested to arrange proper insurance to claim transit damage if any occur during transportation. Note : If you want to insured the material in transport to avoid any damage we will charges 10% insurance amount in basic price.</div>
                     <div class="terms-item"><b>8) WARRANTY :</b> Our products are warranty against any manufacturing defect for the period of one year from the date of invoice. No warranty shall be entertained for failure due to mis-handling, mis-alignment, oil contamination And cavitation.<br>Note : There is no warranty/ Guarantee applicable for any rubber parts</div>
-                    <div class="terms-item"><b>9) TAX :</b> GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)</div>
+                    <div class="terms-item"><b>9) TAX :</b> {{ quotation.tax_terms|default:"GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)" }}</div>
                     <div class="terms-item"><b>10) LD CLAUSE :</b> Not applicable</div>
                     <div class="terms-item"><b>11) VALIDITYE :</b> {{ quotation.validity_terms|default:"30 Days" }}</div>
                     <div class="terms-item"><b>12) PRICE ESCALATION CLAUSE :</b> Price Is Expected To Change In Case Of Changes In Exchange Rate Of Inr In Comparison With Euro Or Usd As Per Products Imported By Us Or Our Principals. Any Change In Exchange Rate Beyond +/- 1.5% Will Lead To Change In Price Which Should Be Acceptable To Purchasers And A Clear ProvisionTo Be Made In The Regards. Prices Are Also Being Reviewed And Shall Change Every Six Months Due To Change In Raw Material Costs And Manpower Cost In India Or The Country Of Origin Of The Components Being Ordered. This Will Be Informed To Customer As And When It Happens And The Price Rise Need To Accepted By The Purchaser.</div>

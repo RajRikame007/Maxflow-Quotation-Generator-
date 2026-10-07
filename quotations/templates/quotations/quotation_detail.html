@@ -231,7 +231,7 @@
                 <tbody>
                     {% for item in items %}
                     <tr>
-                        <td class="text-center fw-bold">{{ forloop.counter }}</td>
+                        <td class="text-center fw-bold">{{ item.sr_no|default:forloop.counter }}</td>
                         <td>
                             <strong>{{ item.description|linebreaksbr }}</strong>
                         </td>
@@ -304,7 +304,7 @@
                     <div class="col-12"><strong>6) DESPATCH :</strong> As suggested by you. Road / Air / Courier</div>
                     <div class="col-12"><strong>7) INSURANCE :</strong> In your scope. You are requested to arrange proper insurance to claim transit damage if any occur during transportation. Note : If you want to insured the material in transport to avoid any damage we will charges 10% insurance amount in basic price.</div>
                     <div class="col-12"><strong>8) WARRANTY :</strong> Our products are warranty against any manufacturing defect for the period of one year from the date of invoice. No warranty shall be entertained for failure due to mis-handling, mis-alignment, oil contamination And cavitation.<br><span class="text-muted">Note : There is no warranty/ Guarantee applicable for any rubber parts</span></div>
-                    <div class="col-12"><strong>9) TAX :</strong> GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)</div>
+                    <div class="col-12"><strong>9) TAX :</strong> {{ quotation.tax_terms|default:"GST 18% (will be charged extra or as applicable at the time of dispatch Our GST No. 27AABCM8025D1ZQ)" }}</div>
                     <div class="col-12"><strong>10) LD CLAUSE :</strong> Not applicable</div>
                     <div class="col-12"><strong>11) VALIDITYE :</strong> {{ quotation.validity_terms|default:"30 Days" }}</div>
                     <div class="col-12"><strong>12) PRICE ESCALATION CLAUSE :</strong> Price Is Expected To Change In Case Of Changes In Exchange Rate Of Inr In Comparison With Euro Or Usd As Per Products Imported By Us Or Our Principals. Any Change In Exchange Rate Beyond +/- 1.5% Will Lead To Change In Price Which Should Be Acceptable To Purchasers And A Clear ProvisionTo Be Made In The Regards. Prices Are Also Being Reviewed And Shall Change Every Six Months Due To Change In Raw Material Costs And Manpower Cost In India Or The Country Of Origin Of The Components Being Ordered. This Will Be Informed To Customer As And When It Happens And The Price Rise Need To Accepted By The Purchaser.</div>

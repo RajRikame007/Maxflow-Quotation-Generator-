@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
 import re
+from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Case, When, Value, IntegerField
 from .models import (
@@ -243,9 +244,9 @@ def sync_quotation_customer_to_master(customer_name, customer_address='', custom
     return customer, is_new, excel_msg
 
 def resequence_quotation_items(quotation):
-    """Renumber quotation item serial numbers sequentially (1, 2, 3...) in row order."""
+    """Ensure any items with missing/blank serial numbers receive sequential numbering without overwriting custom serial numbers."""
     for idx, item in enumerate(quotation.items.all().order_by('id'), start=1):
-        if item.sr_no != str(idx):
+        if not item.sr_no or not str(item.sr_no).strip():
             QuotationItem.objects.filter(pk=item.pk).update(sr_no=str(idx))
 
 @login_required
@@ -267,8 +268,10 @@ def quotation_create(request):
                     formset.instance = quotation
                     formset.save()
                     resequence_quotation_items(quotation)
+                    quotation.refresh_from_db()
                     # Recalculate totals automatically on the backend
                     quotation.recalculate_totals()
+                    quotation.refresh_from_db()
                 
                 # Check if user opted to save/update customer in Master & Excel
                 if request.POST.get('save_customer_to_master') in ['on', 'true', '1']:
@@ -284,14 +287,28 @@ def quotation_create(request):
                         messages.success(request, f"Customer '{c_obj.name}' {action_str} Master & Excel ({excel_msg})")
 
                 messages.success(request, f"Quotation '{quotation.quotation_number}' created successfully!")
-                return redirect('quotation_detail', pk=quotation.pk)
+                if request.POST.get('action') == 'save_detail':
+                    return redirect('quotation_detail', pk=quotation.pk)
+                return redirect('quotation_pdf_preview', pk=quotation.pk)
             except Exception as e:
                 messages.error(request, f"An error occurred while saving: {str(e)}")
         else:
-            messages.error(request, "Please correct the errors in the form below.")
+            err_list = []
+            for field, errs in form.errors.items():
+                label = form.fields.get(field).label if field in form.fields and form.fields.get(field).label else field
+                err_list.append(f"{label}: {', '.join(errs)}")
+            for form_err in formset.errors:
+                if form_err:
+                    for field, errs in form_err.items():
+                        err_list.append(f"Item {field}: {', '.join(errs)}")
+            for non_form_err in formset.non_form_errors():
+                err_list.append(str(non_form_err))
+            err_msg = "Please correct the errors below: " + " | ".join(err_list) if err_list else "Please correct the errors in the form below."
+            messages.error(request, err_msg)
     else:
         initial_data = {
             'quotation_number': get_next_quotation_number(),
+            'quotation_date': timezone.now().date().strftime('%Y-%m-%d'),
         }
         # Pre-populate customer details if customer_id passed in URL
         customer_id = request.GET.get('customer_id')
@@ -336,6 +353,7 @@ def quotation_create(request):
         'initial_customers': initial_customers,
         'total_customers_count': total_customers_count,
         'customer_form': CustomerForm(),
+        'product_form': ProductForm(),
         'title': 'Create New Quotation'
     })
 
@@ -361,7 +379,9 @@ def quotation_edit(request, pk):
                 quotation = form.save()
                 formset.save()
                 resequence_quotation_items(quotation)
+                quotation.refresh_from_db()
                 quotation.recalculate_totals()
+                quotation.refresh_from_db()
 
             # Check if user opted to save/update customer in Master & Excel
             if request.POST.get('save_customer_to_master') in ['on', 'true', '1']:
@@ -377,9 +397,22 @@ def quotation_edit(request, pk):
                     messages.success(request, f"Customer '{c_obj.name}' {action_str} Master & Excel ({excel_msg})")
 
             messages.success(request, f"Quotation '{quotation.quotation_number}' updated successfully!")
-            return redirect('quotation_detail', pk=quotation.pk)
+            if request.POST.get('action') == 'save_detail':
+                return redirect('quotation_detail', pk=quotation.pk)
+            return redirect('quotation_pdf_preview', pk=quotation.pk)
         else:
-            messages.error(request, "Please correct the errors below.")
+            err_list = []
+            for field, errs in form.errors.items():
+                label = form.fields.get(field).label if field in form.fields and form.fields.get(field).label else field
+                err_list.append(f"{label}: {', '.join(errs)}")
+            for form_err in formset.errors:
+                if form_err:
+                    for field, errs in form_err.items():
+                        err_list.append(f"Item {field}: {', '.join(errs)}")
+            for non_form_err in formset.non_form_errors():
+                err_list.append(str(non_form_err))
+            err_msg = "Please correct the errors below: " + " | ".join(err_list) if err_list else "Please correct the errors below."
+            messages.error(request, err_msg)
     else:
         form = QuotationForm(instance=quotation)
         formset = QuotationItemFormSet(instance=quotation)
@@ -394,6 +427,7 @@ def quotation_edit(request, pk):
         'initial_customers': initial_customers,
         'total_customers_count': total_customers_count,
         'customer_form': CustomerForm(),
+        'product_form': ProductForm(),
         'title': f'Edit Quotation: {quotation.quotation_number}'
     })
 
@@ -1051,6 +1085,7 @@ def quotation_detail(request, pk):
 def quotation_download_pdf(request, pk):
     """Generate and trigger download of the PDF file."""
     quotation = get_object_or_404(Quotation, pk=pk)
+    quotation.recalculate_totals()
     items = quotation.items.all()
     logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
     stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
@@ -1066,10 +1101,13 @@ def quotation_download_pdf(request, pk):
     
     if pdf_content:
         # Sanitize quotation number for clean filename
-        safe_num = quotation.quotation_number.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        safe_num = re.sub(r'[^A-Za-z0-9_\-\.]', '_', str(quotation.quotation_number or quotation.pk))
         filename = f"Quotation_{safe_num}.pdf"
         response = HttpResponse(pdf_content, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
         return response
     
     return HttpResponse("Error generating PDF. Please check server logs.", status=500)
@@ -1078,6 +1116,7 @@ def quotation_download_pdf(request, pk):
 def quotation_view_pdf(request, pk):
     """Stream PDF directly in the browser viewer."""
     quotation = get_object_or_404(Quotation, pk=pk)
+    quotation.recalculate_totals()
     items = quotation.items.all()
     logo_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'logo.png')
     stamp_path = os.path.join(settings.BASE_DIR, 'quotations', 'static', 'images', 'stamp.png')
@@ -1092,8 +1131,13 @@ def quotation_view_pdf(request, pk):
     pdf_content = render_to_pdf('quotations/pdf_template.html', context)
     
     if pdf_content:
+        safe_num = re.sub(r'[^A-Za-z0-9_\-\.]', '_', str(quotation.quotation_number or quotation.pk))
+        filename = f"Quotation_{safe_num}.pdf"
         response = HttpResponse(pdf_content, content_type='application/pdf')
-        response['Content-Disposition'] = 'inline; filename="preview.pdf"'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
         return response
     
     return HttpResponse("Error rendering PDF", status=500)
@@ -1156,9 +1200,10 @@ def proforma_generate_from_quotation(request, pk):
         u = item.unit
         if u == 'NOS':
             u = 'No'
+        sr = item.sr_no if (item.sr_no and str(item.sr_no).strip()) else f"{idx + 1:02d}."
         ProformaItem.objects.create(
             proforma=proforma,
-            sr_no=f"{idx + 1:02d}.",
+            sr_no=sr,
             description=item.description,
             quantity=item.quantity if item.quantity is not None else Decimal('1.00'),
             unit=u or 'No',
@@ -1213,8 +1258,8 @@ def proforma_edit(request, pk):
                 saved_proforma.recalculate_totals()
 
             messages.success(request, f"Proforma {saved_proforma.proforma_number} saved successfully!")
-            if 'save_and_preview' in request.POST:
-                return redirect('proforma_detail', pk=saved_proforma.pk)
+            if 'save_and_preview' in request.POST or 'save_and_pdf' in request.POST:
+                return redirect('proforma_pdf_preview', pk=saved_proforma.pk)
             return redirect('proforma_edit', pk=saved_proforma.pk)
         else:
             err_list = []
@@ -1335,10 +1380,13 @@ def proforma_download_pdf(request, pk):
     pdf_content = render_to_pdf('quotations/proforma_pdf_template.html', context)
 
     if pdf_content:
-        safe_num = proforma.proforma_number.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        safe_num = re.sub(r'[^A-Za-z0-9_\-\.]', '_', str(proforma.proforma_number or proforma.pk))
         filename = f"Proforma_{safe_num}.pdf"
         response = HttpResponse(pdf_content, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
         return response
 
     return HttpResponse("Error generating Proforma PDF. Please check server logs.", status=500)
@@ -1363,8 +1411,13 @@ def proforma_view_pdf(request, pk):
     pdf_content = render_to_pdf('quotations/proforma_pdf_template.html', context)
 
     if pdf_content:
+        safe_num = re.sub(r'[^A-Za-z0-9_\-\.]', '_', str(proforma.proforma_number or proforma.pk))
+        filename = f"Proforma_{safe_num}.pdf"
         response = HttpResponse(pdf_content, content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="Proforma_{proforma.proforma_number}.pdf"'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
         return response
 
     return HttpResponse("Error rendering Proforma PDF", status=500)

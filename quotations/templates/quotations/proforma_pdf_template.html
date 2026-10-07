@@ -237,7 +237,12 @@
     <!-- Proforma Number and Date -->
     <table class="meta-table" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-            <td class="meta-left" width="55%">{{ proforma.proforma_number }}</td>
+            <td class="meta-left" width="55%">
+                {{ proforma.proforma_number }}
+                {% if proforma.quotation_number_ref %}
+                <br><span style="font-size: 8pt; font-weight: normal; color: #444;">REF. QTN: {{ proforma.quotation_number_ref }}</span>
+                {% endif %}
+            </td>
             <td class="meta-right" width="45%">DATE: {{ proforma.proforma_date|date:"d.m.Y" }}</td>
         </tr>
     </table>

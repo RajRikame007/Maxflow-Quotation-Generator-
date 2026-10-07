@@ -351,6 +351,140 @@ class QuotationTestCase(TestCase):
         self.assertEqual(self.quotation.pf_percentage, Decimal('0.00'))
         self.assertEqual(self.quotation.subtotal, Decimal('1000.00'))
 
+    def test_quotation_edit_custom_sr_no_preserved(self):
+        """Ensure custom item serial numbers (e.g. 'Item 1A', '2.1') are preserved on edit and shown in detail and PDF."""
+        post_data = {
+            'company_name': self.quotation.company_name,
+            'company_address': self.quotation.company_address,
+            'company_phone': self.quotation.company_phone,
+            'company_email': self.quotation.company_email,
+            'quotation_number': self.quotation.quotation_number,
+            'quotation_date': str(self.quotation.quotation_date),
+            'salutation': 'DEAR SIR,',
+            'subject': 'QUOTATION NOTE',
+            'customer_name': self.quotation.customer_name,
+            'customer_address': self.quotation.customer_address,
+            'price_terms': 'F.O.R., DESTINATION',
+            'freight_terms': 'EXTRA',
+            'pf_terms': 'NIL',
+            'discount_terms': 'NET.',
+            'tax_terms': '18% GST Extra',
+            'payment_terms': '30 DAYS',
+            'validity_terms': '30 DAYS.',
+            'signatory_company': 'MAXFLOW',
+            'signatory_name': 'DINENDRA CHARI',
+            'signatory_designation': 'MANAGER',
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '1',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': str(self.item.id),
+            'items-0-sr_no': 'Item 1A',
+            'items-0-description': 'First Item Custom SR',
+            'items-0-quantity': '1',
+            'items-0-unit': 'NOS',
+            'items-0-unit_rate': '1000.00',
+            'items-0-gst_rate': '18',
+            'items-0-amount': '1000.00',
+            'items-1-id': '',
+            'items-1-sr_no': 'Item 2B',
+            'items-1-description': 'Second Item Custom SR',
+            'items-1-quantity': '2',
+            'items-1-unit': 'NOS',
+            'items-1-unit_rate': '2000.00',
+            'items-1-gst_rate': '18%',
+            'items-1-amount': '4000.00',
+        }
+        response = self.client.post(reverse('quotation_edit', args=[self.quotation.pk]), data=post_data)
+        self.assertEqual(response.status_code, 302)
+
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.sr_no, 'Item 1A')
+
+        new_item = self.quotation.items.exclude(pk=self.item.pk).first()
+        self.assertIsNotNone(new_item)
+        self.assertEqual(new_item.sr_no, 'Item 2B')
+
+        # Check detail view displays custom sr_no
+        detail_resp = self.client.get(reverse('quotation_detail', args=[self.quotation.pk]))
+        self.assertContains(detail_resp, 'Item 1A')
+        self.assertContains(detail_resp, 'Item 2B')
+
+    def test_quotation_edit_add_gst_after_saving_without_gst(self):
+        """Ensure editing a quotation to add GST after it was saved without GST calculates and persists GST correctly."""
+        # Create a quotation without GST
+        no_gst_q = Quotation.objects.create(
+            quotation_number='TEST-NOGST-99',
+            quotation_date=date.today(),
+            customer_name='Zero GST Client',
+            customer_address='Zero Tax Lane',
+            tax_terms='GST Extra'
+        )
+        q_item = QuotationItem.objects.create(
+            quotation=no_gst_q,
+            sr_no='1',
+            description='Machine Part Without Initial Tax',
+            quantity=Decimal('2.00'),
+            unit='NOS',
+            unit_rate=Decimal('5000.00'),
+            gst_rate=None
+        )
+        no_gst_q.recalculate_totals()
+        self.assertEqual(no_gst_q.tax_amount, Decimal('0.00'))
+        self.assertEqual(no_gst_q.grand_total, Decimal('10000.00'))
+
+        # Now edit to add 18% GST (testing with '18%')
+        post_data = {
+            'company_name': no_gst_q.company_name,
+            'company_address': no_gst_q.company_address,
+            'company_phone': no_gst_q.company_phone,
+            'company_email': no_gst_q.company_email,
+            'quotation_number': no_gst_q.quotation_number,
+            'quotation_date': str(no_gst_q.quotation_date),
+            'salutation': 'DEAR SIR,',
+            'subject': 'QUOTATION NOTE',
+            'customer_name': no_gst_q.customer_name,
+            'customer_address': no_gst_q.customer_address,
+            'price_terms': 'F.O.R., DESTINATION',
+            'freight_terms': 'EXTRA',
+            'pf_terms': 'NIL',
+            'discount_terms': 'NET.',
+            'tax_terms': 'AS INDICATED ABOVE (18% GST Extra)',
+            'payment_terms': '30 DAYS',
+            'validity_terms': '30 DAYS.',
+            'signatory_company': 'MAXFLOW',
+            'signatory_name': 'DINENDRA CHARI',
+            'signatory_designation': 'MANAGER',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '1',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': str(q_item.id),
+            'items-0-sr_no': '1',
+            'items-0-description': 'Machine Part Without Initial Tax',
+            'items-0-quantity': '2',
+            'items-0-unit': 'NOS',
+            'items-0-unit_rate': '5000.00',
+            'items-0-gst_rate': '18%',
+            'items-0-amount': '10000.00',
+        }
+        edit_resp = self.client.post(reverse('quotation_edit', args=[no_gst_q.pk]), data=post_data)
+        self.assertEqual(edit_resp.status_code, 302)
+
+        no_gst_q.refresh_from_db()
+        q_item.refresh_from_db()
+        self.assertEqual(q_item.gst_rate, Decimal('18.00'))
+        self.assertEqual(no_gst_q.tax_amount, Decimal('1800.00'))
+        self.assertEqual(no_gst_q.grand_total, Decimal('11800.00'))
+        self.assertIn('18%', no_gst_q.gst_rates_display)
+
+        # PDF download should generate successfully and have 18% tax
+        pdf_resp = self.client.get(reverse('quotation_pdf_download', args=[no_gst_q.pk]))
+        self.assertEqual(pdf_resp.status_code, 200)
+        self.assertEqual(pdf_resp['Content-Type'], 'application/pdf')
+
+        no_gst_q.delete()
+
     def test_customer_edit_post(self):
         from .models import Customer
         cust = Customer.objects.create(
@@ -1077,6 +1211,141 @@ class ProformaTestCase(TestCase):
         # Check PDF preview
         pdf_res = self.client.get(reverse('proforma_pdf_preview', args=[proforma.pk]))
         self.assertEqual(pdf_res.status_code, 200)
+
+    def test_quotation_item_description_optional(self):
+        """Item description should NOT be compulsory when creating/editing a quotation."""
+        create_url = reverse('quotation_create')
+        post_data = {
+            'company_name': 'MAXFLOW CONTROLS',
+            'company_address': 'Plot No. 1, MIDC',
+            'company_phone': '9876543210',
+            'company_email': 'info@maxflowcontrols.com',
+            'company_gstin': '27ABCDE1234F1Z5',
+            'company_pan': 'ABCDE1234F',
+            'quotation_number': 'QTN/OPTDESC/001',
+            'quotation_date': '2026-10-07',
+            'salutation': 'DEAR SIR,',
+            'subject': 'QUOTATION FOR HYDRAULICS',
+            'customer_name': 'TEST CUSTOMER WITHOUT DESC',
+            'customer_address': 'Plot 10, MIDC Area, Pune',
+            'price_terms': 'F.O.R. SITE',
+            'freight_terms': 'EXTRA AT ACTUALS',
+            'pf_terms': 'NIL',
+            'discount_terms': 'NET',
+            'payment_terms': '100% ADVANCE',
+            'validity_terms': '30 DAYS',
+            'signatory_company': 'FOR MAXFLOW CONTROLS',
+            'tax_terms': 'AS INDICATED ABOVE (18% GST Extra)',
+            'signatory_name': 'RAJ',
+            'signatory_designation': 'MANAGER',
+            'subtotal': '5000.00',
+            'discount_percentage': '0.00',
+            'pf_percentage': '0.00',
+            'freight_amount': '0.00',
+            'taxable_amount': '5000.00',
+            'tax_amount': '900.00',
+            'grand_total': '5900.00',
+            # Formset management
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            # Item 0: has quantity and rate, but NO description
+            'items-0-id': '',
+            'items-0-sr_no': '1',
+            'items-0-description': '',
+            'items-0-hsn_code': '84136090',
+            'items-0-quantity': '2',
+            'items-0-unit': 'NOS',
+            'items-0-unit_rate': '2500.00',
+            'items-0-gst_rate': '18',
+            'items-0-delivery_schedule': 'EX STOCK',
+            # Item 1: completely blank extra row where sr_no is set
+            'items-1-id': '',
+            'items-1-sr_no': '2',
+            'items-1-description': '',
+            'items-1-hsn_code': '',
+            'items-1-quantity': '',
+            'items-1-unit': 'NOS',
+            'items-1-unit_rate': '',
+            'items-1-gst_rate': '',
+            'items-1-delivery_schedule': 'EX STOCK',
+        }
+
+        res = self.client.post(create_url, post_data)
+        self.assertEqual(res.status_code, 302)
+
+        q = Quotation.objects.get(quotation_number='QTN/OPTDESC/001')
+        # Only the 1 substantive item should be created, extra blank row ignored
+        self.assertEqual(q.items.count(), 1)
+        item = q.items.first()
+        self.assertEqual(item.description, '')
+        self.assertEqual(item.quantity, Decimal('2.00'))
+        self.assertEqual(item.unit_rate, Decimal('2500.00'))
+        self.assertEqual(item.amount, Decimal('5000.00'))
+
+        # Detail and PDF rendering must succeed with blank description
+        detail_res = self.client.get(reverse('quotation_detail', args=[q.pk]))
+        self.assertEqual(detail_res.status_code, 200)
+        pdf_res = self.client.get(reverse('quotation_pdf_preview', args=[q.pk]))
+        self.assertEqual(pdf_res.status_code, 200)
+
+    def test_proforma_item_description_optional(self):
+        """Item description should NOT be compulsory when editing a Proforma invoice."""
+        proforma = Proforma.objects.create(
+            proforma_number='PI/TEST/DESC/001',
+            customer_name='CUSTOMER NO DESC',
+            customer_address='Factory 2, MIDC',
+            status='Draft',
+        )
+        edit_url = reverse('proforma_edit', args=[proforma.pk])
+        post_data = {
+            'proforma_number': 'PI/TEST/DESC/001',
+            'customer_name': 'CUSTOMER NO DESC',
+            'customer_address': 'Factory 2, MIDC',
+            'status': 'Draft',
+            'proforma_date': '2026-10-07',
+            'tax_rate': '18.00',
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            # Item 0 has no description
+            'items-0-id': '',
+            'items-0-sr_no': '01.',
+            'items-0-description': '',
+            'items-0-quantity': '3',
+            'items-0-unit': 'No',
+            'items-0-unit_rate': '1000.00',
+            # Item 1 is an untouched extra row
+            'items-1-id': '',
+            'items-1-sr_no': '02.',
+            'items-1-description': '',
+            'items-1-quantity': '',
+            'items-1-unit': 'No',
+            'items-1-unit_rate': '',
+        }
+        res = self.client.post(edit_url, post_data)
+        self.assertEqual(res.status_code, 302)
+
+        proforma.refresh_from_db()
+        self.assertEqual(proforma.items.count(), 1)
+        item = proforma.items.first()
+        self.assertEqual(item.description, '')
+        self.assertEqual(item.quantity, Decimal('3.00'))
+        self.assertEqual(item.unit_rate, Decimal('1000.00'))
+
+    def test_quotation_date_auto_filled_with_current_date(self):
+        """When creating a quotation, the date field must be automatically pre-populated with today's date."""
+        from django.utils import timezone
+        today_str = timezone.now().date().strftime('%Y-%m-%d')
+        res = self.client.get(reverse('quotation_create'))
+        self.assertEqual(res.status_code, 200)
+        # Form initial must have today's date
+        form = res.context['form']
+        self.assertEqual(str(form.initial.get('quotation_date')), today_str)
+        # Rendered HTML must contain value="YYYY-MM-DD"
+        self.assertContains(res, f'value="{today_str}"')
 
 
 

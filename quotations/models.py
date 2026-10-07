@@ -197,7 +197,7 @@ class QuotationItem(models.Model):
 
     quotation = models.ForeignKey(Quotation, related_name='items', on_delete=models.CASCADE)
     sr_no = models.CharField(max_length=20, default='1', verbose_name="Sr. #")
-    description = models.TextField(verbose_name="Description of Item")
+    description = models.TextField(blank=True, default='', verbose_name="Description of Item")
     hsn_code = models.CharField(max_length=50, blank=True, default='', verbose_name="HSN Code")
     quantity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, default=None, verbose_name="Qty.")
     unit = models.CharField(max_length=30, choices=UNIT_CHOICES, default='NOS', verbose_name="Unit")
@@ -210,7 +210,8 @@ class QuotationItem(models.Model):
         ordering = ['id']
 
     def __str__(self):
-        return f"{self.sr_no}. {self.description[:40]}"
+        desc = self.description or "No description"
+        return f"{self.sr_no}. {desc[:40]}"
 
     def save(self, *args, **kwargs):
         from decimal import Decimal
@@ -631,7 +632,7 @@ class Proforma(models.Model):
 class ProformaItem(models.Model):
     proforma = models.ForeignKey(Proforma, related_name='items', on_delete=models.CASCADE)
     sr_no = models.CharField(max_length=20, default='01.', verbose_name="Sr. #")
-    description = models.TextField(verbose_name="Item Description")
+    description = models.TextField(blank=True, default='', verbose_name="Item Description")
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'), verbose_name="Qty.")
     unit = models.CharField(max_length=30, default='No', verbose_name="Unit")
     unit_rate = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), blank=True, null=True, verbose_name="Unit Rate (Rs.)")
@@ -641,7 +642,8 @@ class ProformaItem(models.Model):
         ordering = ['id']
 
     def __str__(self):
-        return f"{self.sr_no} {self.description[:40]}"
+        desc = self.description or "No description"
+        return f"{self.sr_no} {desc[:40]}"
 
     @property
     def qty_display(self):

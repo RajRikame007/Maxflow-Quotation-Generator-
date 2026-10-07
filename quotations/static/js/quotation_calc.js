@@ -14,15 +14,44 @@ document.addEventListener('DOMContentLoaded', function () {
     const taxInput = document.getElementById('id_tax_amount');
     const grandTotalInput = document.getElementById('id_grand_total');
 
+    // Update the Summary GST Rate input and label based on rates detected in visible rows
+    function updateGstSummaryDisplay(foundRates) {
+        const summaryGstInput = document.getElementById('id_summary_gst_rate');
+        const lblSummaryGst = document.getElementById('lbl-summary-gst');
+
+        if (summaryGstInput && document.activeElement !== summaryGstInput) {
+            if (foundRates.length === 1) {
+                summaryGstInput.value = foundRates[0];
+            } else if (foundRates.length === 0) {
+                summaryGstInput.value = '';
+                summaryGstInput.placeholder = '0';
+            } else {
+                summaryGstInput.value = '';
+                summaryGstInput.placeholder = 'Mixed';
+            }
+        }
+
+        if (lblSummaryGst) {
+            if (foundRates.length === 1) {
+                lblSummaryGst.innerHTML = `GST @${foundRates[0]}% (₹):`;
+            } else if (foundRates.length > 1) {
+                lblSummaryGst.innerHTML = `GST (Mixed) (₹):`;
+            } else {
+                lblSummaryGst.innerHTML = `GST (₹):`;
+            }
+        }
+    }
+
     // Function to calculate individual row amount and entire quotation totals with exact precision
     function calculateTotals() {
         let subtotal = 0;
         let rawItemTax = 0;
         let visibleSr = 0;
+        const foundRates = [];
 
         const rows = itemsContainer ? itemsContainer.querySelectorAll('.item-row') : [];
 
-        rows.forEach(function (row, index) {
+        rows.forEach(function (row) {
             // Check if row is marked for deletion
             const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
             if (deleteCheckbox && deleteCheckbox.checked) {
@@ -36,15 +65,23 @@ document.addEventListener('DOMContentLoaded', function () {
             const amountInput = row.querySelector('.item-amount');
             const srInput = row.querySelector('.item-sr');
 
-            // Always keep serial numbers sequential across visible rows (1, 2, 3...)
+            // Set default sequential number ONLY if empty or blank; NEVER overwrite user-edited serial numbers
             visibleSr += 1;
-            if (srInput) {
+            if (srInput && (!srInput.value || !srInput.value.trim())) {
                 srInput.value = visibleSr;
             }
 
             const qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
             const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
-            const gstRate = parseFloat(gstInput ? gstInput.value : 0) || 0;
+
+            const rawGstStr = gstInput ? (gstInput.value || '').replace('%', '').trim() : '';
+            const gstRate = parseFloat(rawGstStr) || 0;
+            if (rawGstStr && !isNaN(parseFloat(rawGstStr)) && parseFloat(rawGstStr) > 0) {
+                const cleanRateVal = parseFloat(parseFloat(rawGstStr).toFixed(2));
+                if (!foundRates.includes(cleanRateVal)) {
+                    foundRates.push(cleanRateVal);
+                }
+            }
 
             // Row amount with exact 2-decimal precision (no integer round-off)
             const rowAmount = Math.round(qty * rate * 100) / 100;
@@ -93,23 +130,84 @@ document.addEventListener('DOMContentLoaded', function () {
         if (subtotalInput) subtotalInput.value = subtotal.toFixed(2);
         if (taxInput) taxInput.value = totalTax.toFixed(2);
         if (grandTotalInput) grandTotalInput.value = grandTotal.toFixed(2);
+
+        updateGstSummaryDisplay(foundRates);
     }
 
+    // Apply given GST rate to all active item rows
+    function applyGstToAllRows(rate) {
+        const numRate = parseFloat(rate);
+        const formattedRate = isNaN(numRate) ? '' : (numRate % 1 === 0 ? String(parseInt(numRate, 10)) : String(numRate));
+
+        const rows = itemsContainer ? itemsContainer.querySelectorAll('.item-row') : [];
+        rows.forEach(function (row) {
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (deleteCheckbox && deleteCheckbox.checked) return;
+
+            const gstInput = row.querySelector('.item-gst');
+            if (gstInput) {
+                gstInput.value = formattedRate;
+                gstInput.style.transition = 'background-color 0.25s, border-color 0.25s';
+                gstInput.style.backgroundColor = '#d1e7dd';
+                gstInput.style.borderColor = '#198754';
+                setTimeout(() => {
+                    gstInput.style.backgroundColor = '';
+                    gstInput.style.borderColor = '';
+                }, 900);
+            }
+        });
+
+        const summaryGstInput = document.getElementById('id_summary_gst_rate');
+        if (summaryGstInput) {
+            summaryGstInput.value = formattedRate;
+        }
+
+        // Sync with tax_terms if currently default or empty
+        const taxTermsInput = document.getElementById('id_tax_terms');
+        if (taxTermsInput) {
+            const currentTerms = (taxTermsInput.value || '').trim();
+            if (numRate > 0) {
+                if (!currentTerms || currentTerms === 'AS INDICATED ABOVE (GST Extra)' || currentTerms.startsWith('AS INDICATED ABOVE (')) {
+                    taxTermsInput.value = `AS INDICATED ABOVE (${formattedRate}% GST Extra)`;
+                }
+            } else if (numRate === 0) {
+                if (currentTerms.includes('GST Extra') || currentTerms.includes('% GST')) {
+                    taxTermsInput.value = 'NIL / GST EXTRA AS APPLICABLE';
+                }
+            }
+        }
+
+        calculateTotals();
+    }
 
     // Add new item row
     if (addItemBtn && emptyRowTbody && totalFormsInput) {
         addItemBtn.addEventListener('click', function () {
-            const formCount = parseInt(totalFormsInput.value);
+            const formCount = parseInt(totalFormsInput.value, 10);
             const emptyTemplate = emptyRowTbody.innerHTML;
-            
+
             // Replace __prefix__ with current form index
             const newRowHtml = emptyTemplate.replace(/__prefix__/g, formCount);
-            
+
             itemsContainer.insertAdjacentHTML('beforeend', newRowHtml);
             totalFormsInput.value = formCount + 1;
 
-            // Serial number for the new row is assigned by calculateTotals()
             const newRow = itemsContainer.lastElementChild;
+
+            // Pre-fill active summary GST rate on the new row (default 18 if not set)
+            const summaryGstInput = document.getElementById('id_summary_gst_rate');
+            const activeRate = (summaryGstInput && summaryGstInput.value !== '') ? summaryGstInput.value : '18';
+            const newGstInput = newRow.querySelector('.item-gst');
+            if (newGstInput && (!newGstInput.value || newGstInput.value === '')) {
+                newGstInput.value = activeRate;
+            }
+
+            // Assign next serial number
+            const newSrInput = newRow.querySelector('.item-sr');
+            if (newSrInput && (!newSrInput.value || !newSrInput.value.trim())) {
+                const visibleCount = itemsContainer.querySelectorAll('.item-row:not([style*="display: none"])').length;
+                newSrInput.value = visibleCount;
+            }
 
             // Ensure unit rate is completely blank on new rows
             const rateInput = newRow.querySelector('.item-rate');
@@ -147,7 +245,28 @@ document.addEventListener('DOMContentLoaded', function () {
         const inputs = row.querySelectorAll('.item-qty, .item-rate, .item-gst');
         inputs.forEach(input => {
             input.addEventListener('input', calculateTotals);
+            input.addEventListener('change', calculateTotals);
         });
+
+        const gstInput = row.querySelector('.item-gst');
+        if (gstInput) {
+            gstInput.addEventListener('blur', function () {
+                const raw = (this.value || '').replace('%', '').trim();
+                const parsed = parseFloat(raw);
+                if (!isNaN(parsed) && raw !== '') {
+                    this.value = (parsed % 1 === 0) ? String(parseInt(parsed, 10)) : String(parsed);
+                }
+                calculateTotals();
+            });
+        }
+
+        const srInput = row.querySelector('.item-sr');
+        if (srInput) {
+            // Keep user manual edits without overwrite
+            srInput.addEventListener('input', function () {
+                // Preserved as-is
+            });
+        }
 
         const rateInput = row.querySelector('.item-rate');
         if (rateInput) {
@@ -167,7 +286,7 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
 
-        // 1. Direct click on Product Catalog Dropdown Item
+        // Direct click on Product Catalog Dropdown Item
         const pickerBtns = row.querySelectorAll('.product-picker-btn');
         pickerBtns.forEach(btn => {
             btn.addEventListener('click', function (e) {
@@ -179,19 +298,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 const gst = this.getAttribute('data-gst');
 
                 const descInput = row.querySelector('.item-desc');
-                const rateInput = row.querySelector('.item-rate');
+                const rInput = row.querySelector('.item-rate');
                 const hsnInput = row.querySelector('.item-hsn');
                 const unitInput = row.querySelector('.item-unit');
-                const gstInput = row.querySelector('.item-gst');
+                const gInput = row.querySelector('.item-gst');
 
                 if (descInput && code) {
                     descInput.value = code;
                 }
-                if (rateInput && rate) {
-                    rateInput.value = parseFloat(rate).toFixed(2);
-                    rateInput.classList.add('border-success', 'bg-success-subtle');
+                if (rInput && rate) {
+                    rInput.value = parseFloat(rate).toFixed(2);
+                    rInput.classList.add('border-success', 'bg-success-subtle');
                     setTimeout(() => {
-                        rateInput.classList.remove('border-success', 'bg-success-subtle');
+                        rInput.classList.remove('border-success', 'bg-success-subtle');
                     }, 1200);
                 }
                 if (hsnInput && hsn) {
@@ -200,8 +319,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (unitInput && unit) {
                     unitInput.value = unit;
                 }
-                if (gstInput && gst) {
-                    gstInput.value = gst;
+                if (gInput && gst) {
+                    gInput.value = gst;
                 }
 
                 // If quantity is empty, default to 1 for quick pricing
@@ -214,7 +333,7 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
 
-        // 2. Auto-fill Unit Rate, HSN, Unit & GST when product is typed or picked from datalist
+        // Auto-fill Unit Rate, HSN, Unit & GST when product is typed or picked from datalist
         const descInput = row.querySelector('.item-desc');
         if (descInput) {
             const handleProductMatch = function () {
@@ -242,16 +361,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 if (matched) {
-                    const rateInput = row.querySelector('.item-rate');
+                    const rInput = row.querySelector('.item-rate');
                     const hsnInput = row.querySelector('.item-hsn');
                     const unitInput = row.querySelector('.item-unit');
-                    const gstInput = row.querySelector('.item-gst');
+                    const gInput = row.querySelector('.item-gst');
 
-                    if (rateInput && matched.rate) {
-                        rateInput.value = parseFloat(matched.rate).toFixed(2);
-                        rateInput.classList.add('border-success', 'bg-success-subtle');
+                    if (rInput && matched.rate) {
+                        rInput.value = parseFloat(matched.rate).toFixed(2);
+                        rInput.classList.add('border-success', 'bg-success-subtle');
                         setTimeout(() => {
-                            rateInput.classList.remove('border-success', 'bg-success-subtle');
+                            rInput.classList.remove('border-success', 'bg-success-subtle');
                         }, 1200);
                     }
                     if (hsnInput && matched.hsn) {
@@ -260,8 +379,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (unitInput && matched.unit) {
                         unitInput.value = matched.unit;
                     }
-                    if (gstInput && matched.gst) {
-                        gstInput.value = matched.gst;
+                    if (gInput && matched.gst) {
+                        gInput.value = matched.gst;
                     }
 
                     // Default qty to 1 if empty
@@ -294,8 +413,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Expose calculateTotals globally
+    // Expose calculateTotals and applyGstToAllRows globally
     window.calculateQuotationTotals = calculateTotals;
+    window.applyQuotationGstToAll = applyGstToAllRows;
 
     // Attach listeners to all existing rows & format initial values
     const existingRows = itemsContainer ? itemsContainer.querySelectorAll('.item-row') : [];
@@ -313,6 +433,25 @@ document.addEventListener('DOMContentLoaded', function () {
         attachRowListeners(row);
     });
 
+    // Wire Apply GST Preset Buttons in table header and summary box
+    document.querySelectorAll('.btn-apply-all-gst, .btn-summary-gst-preset').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const rate = this.getAttribute('data-rate');
+            applyGstToAllRows(rate);
+        });
+    });
+
+    const summaryGstInput = document.getElementById('id_summary_gst_rate');
+    if (summaryGstInput) {
+        summaryGstInput.addEventListener('input', function () {
+            applyGstToAllRows(this.value);
+        });
+        summaryGstInput.addEventListener('change', function () {
+            applyGstToAllRows(this.value);
+        });
+    }
+
     if (discountPercentInput) {
         discountPercentInput.addEventListener('input', calculateTotals);
     }
@@ -329,4 +468,3 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initial calculation on page load
     calculateTotals();
 });
-

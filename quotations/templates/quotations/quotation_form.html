@@ -33,6 +33,15 @@
         text-align: center;
         font-weight: 500;
     }
+    .item-hsn {
+        min-width: 125px !important;
+        font-weight: 600 !important;
+        font-family: monospace, sans-serif !important;
+        font-size: 0.95rem !important;
+        letter-spacing: 0.5px !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
     /* Hide up/down spinner buttons on Unit Rate and number inputs */
     input.item-rate::-webkit-outer-spin-button,
     input.item-rate::-webkit-inner-spin-button,
@@ -67,11 +76,36 @@
                     <a href="{% if quotation %}{% url 'quotation_detail' quotation.pk %}{% else %}{% url 'quotation_list' %}{% endif %}" class="btn btn-outline-secondary">
                         Cancel
                     </a>
-                    <button type="submit" class="btn btn-primary px-4 fw-semibold">
-                        <i class="bi bi-check2-circle me-1"></i> Save Quotation
+                    <button type="submit" name="action" value="save_and_pdf" class="btn btn-primary px-4 fw-semibold shadow-sm">
+                        <i class="bi bi-file-earmark-pdf me-1"></i> Save & Open PDF
                     </button>
                 </div>
             </div>
+
+            {% if form.errors or formset.errors %}
+            <div class="alert alert-danger shadow-sm mb-4" role="alert">
+                <h5 class="alert-heading fw-bold mb-2">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Please correct the following errors:
+                </h5>
+                <ul class="mb-0 ps-3">
+                    {% for field, errors in form.errors.items %}
+                        {% for error in errors %}
+                            <li><strong>{{ field|title }}:</strong> {{ error }}</li>
+                        {% endfor %}
+                    {% endfor %}
+                    {% for f_err in formset.errors %}
+                        {% for field, errors in f_err.items %}
+                            {% for error in errors %}
+                                <li><strong>Item {{ field|title }}:</strong> {{ error }}</li>
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                    {% for error in formset.non_form_errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
 
             <!-- 1. QUOTATION & CUSTOMER DETAILS (2 Columns) -->
             <div class="row g-3 mb-4">
@@ -234,9 +268,14 @@
                 <div class="card-body">
                     <div class="section-title">
                         <span><i class="bi bi-list-ol me-2 text-primary"></i>Quotation Items</span>
-                        <button type="button" class="btn btn-sm btn-outline-success" id="add-item-btn">
-                            <i class="bi bi-plus-circle me-1"></i> Add Another Item
-                        </button>
+                        <div class="d-flex align-items-center flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary shadow-sm" id="btn-save-new-item-modal" data-bs-toggle="modal" data-bs-target="#saveNewProductModal" title="Add and save a new product directly into database Master and 'Product List.xlsx'">
+                                <i class="bi bi-plus-square me-1"></i> Save New Item to Master &amp; Excel
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success" id="add-item-btn">
+                                <i class="bi bi-plus-circle me-1"></i> Add Another Item
+                            </button>
+                        </div>
                     </div>
 
                     {{ formset.management_form }}
@@ -268,8 +307,8 @@
                             <thead class="table-light">
                                 <tr class="text-center small">
                                     <th style="width: 5%; min-width: 60px;">Sr.#</th>
-                                    <th style="width: 27%;">Description of Item *</th>
-                                    <th style="width: 10%;">HSN Code</th>
+                                    <th style="width: 26%;">Description of Item</th>
+                                    <th style="width: 11%; min-width: 130px;">HSN Code</th>
                                     <th style="width: 7%;">Qty</th>
                                     <th style="width: 8%;">Unit</th>
                                     <th style="width: 11%;">Unit Rate (₹)</th>
@@ -300,7 +339,7 @@
                                             <div class="product-autocomplete-dropdown shadow border rounded-2 bg-white d-none position-absolute w-100" style="z-index: 1060; max-height: 250px; overflow-y: auto; top: 100%; left: 0;"></div>
                                         </div>
                                     </td>
-                                    <td>{{ item_form.hsn_code }}</td>
+                                    <td style="min-width: 130px;">{{ item_form.hsn_code }}</td>
                                     <td>{{ item_form.quantity }}</td>
                                     <td>{{ item_form.unit }}</td>
                                     <td>{{ item_form.unit_rate }}</td>
@@ -343,7 +382,7 @@
                                         <div class="product-autocomplete-dropdown shadow border rounded-2 bg-white d-none position-absolute w-100" style="z-index: 1060; max-height: 250px; overflow-y: auto; top: 100%; left: 0;"></div>
                                     </div>
                                 </td>
-                                <td>{{ formset.empty_form.hsn_code }}</td>
+                                <td style="min-width: 130px;">{{ formset.empty_form.hsn_code }}</td>
                                 <td>{{ formset.empty_form.quantity }}</td>
                                 <td>{{ formset.empty_form.unit }}</td>
                                 <td>{{ formset.empty_form.unit_rate }}</td>
@@ -411,7 +450,7 @@
                                     <div style="width: 55%;">{{ form.taxable_amount }}</div>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label mb-0 text-secondary">GST (₹):</label>
+                                    <label class="form-label mb-0 text-secondary" id="lbl-summary-gst">GST (₹):</label>
                                     <div style="width: 55%;">{{ form.tax_amount }}</div>
                                 </div>
                                 <hr class="my-2">
@@ -460,7 +499,19 @@
                             {{ form.discount_terms }}
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Tax Terms</label>
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Tax Terms</span>
+                                <span class="text-muted small fw-normal">Select or type</span>
+                            </label>
+                            <select class="form-select form-select-sm mb-2 text-primary fw-semibold" id="tax-terms-preset" onchange="if(this.value && this.value !== 'custom') { document.getElementById('id_tax_terms').value = this.value; }">
+                                <option value="" selected>-- Select Tax Term --</option>
+                                <option value="AS INDICATED ABOVE (18% GST Extra)">AS INDICATED ABOVE (18% GST Extra)</option>
+                                <option value="AS INDICATED ABOVE (GST Extra)">AS INDICATED ABOVE (GST Extra)</option>
+                                <option value="18% GST EXTRA">18% GST EXTRA</option>
+                                <option value="GST INCLUDED AS ABOVE">GST INCLUDED AS ABOVE</option>
+                                <option value="NIL / GST EXTRA AS APPLICABLE">NIL / GST EXTRA AS APPLICABLE</option>
+                                <option value="custom">Custom (Type manually below)</option>
+                            </select>
                             {{ form.tax_terms }}
                         </div>
                         <div class="col-md-4">
@@ -605,12 +656,29 @@
             </div>
 
             <!-- Action Bar -->
-            <div class="card shadow-sm p-3 mb-5 text-end">
-                <div>
-                    <a href="{% url 'quotation_list' %}" class="btn btn-secondary me-2">Cancel</a>
-                    <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">
-                        <i class="bi bi-save me-2"></i>Save Quotation
-                    </button>
+            <div class="card shadow-sm p-3 mb-5">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <a href="{% url 'quotation_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i> Cancel
+                        </a>
+                        {% if quotation.pk %}
+                        <a href="{% url 'quotation_detail' quotation.pk %}" class="btn btn-outline-info ms-1">
+                            <i class="bi bi-eye me-1"></i> View Details
+                        </a>
+                        <a href="{% url 'quotation_pdf_preview' quotation.pk %}" class="btn btn-outline-secondary ms-1" target="_blank">
+                            <i class="bi bi-file-earmark-pdf me-1"></i> Current PDF
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" name="action" value="save_detail" class="btn btn-outline-primary">
+                            <i class="bi bi-save me-1"></i> Save Only
+                        </button>
+                        <button type="submit" name="action" value="save_and_pdf" class="btn btn-primary btn-lg px-4 fw-bold shadow-sm">
+                            <i class="bi bi-file-earmark-pdf me-2"></i> Save & Open PDF
+                        </button>
+                    </div>
                 </div>
             </div>
         </form>
@@ -1242,6 +1310,16 @@
 <script src="/static/js/quotation_calc.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // Auto-fill quotation date with current date if empty
+        const qDateInput = document.getElementById('id_quotation_date');
+        if (qDateInput && !qDateInput.value) {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            qDateInput.value = `${yyyy}-${mm}-${dd}`;
+        }
+
         // Sync Price Terms preset
         const priceInput = document.getElementById('id_price_terms');
         const pricePreset = document.getElementById('price-terms-preset');
@@ -1276,6 +1354,19 @@
             for (let option of pfPreset.options) {
                 if (option.value && option.value !== 'custom' && option.value.toLowerCase() === currentVal.toLowerCase()) {
                     pfPreset.value = option.value;
+                    break;
+                }
+            }
+        }
+
+        // Sync Tax Terms preset
+        const taxInput = document.getElementById('id_tax_terms');
+        const taxPreset = document.getElementById('tax-terms-preset');
+        if (taxInput && taxPreset) {
+            const currentVal = (taxInput.value || '').trim();
+            for (let option of taxPreset.options) {
+                if (option.value && option.value !== 'custom' && option.value.toLowerCase() === currentVal.toLowerCase()) {
+                    taxPreset.value = option.value;
                     break;
                 }
             }
@@ -1764,5 +1855,191 @@
         </div>
     </div>
 </div>
+
+<!-- Modal: Save New Item to Product Master & Excel -->
+<div class="modal fade" id="saveNewProductModal" tabindex="-1" aria-labelledby="saveNewProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-0">
+            <form id="saveNewProductForm" method="post" action="{% url 'product_create' %}">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="saveNewProductModalLabel">
+                        <i class="bi bi-box-seam me-2"></i>Save New Item to Product Master &amp; Excel
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        This item will be saved directly into the database <strong>Product Master</strong> and appended to <strong>Product List.xlsx</strong>. It will <strong>only</strong> be saved when you click the "Save to Master &amp; Excel" button below.
+                    </div>
+                    <div id="saveNewProductErrorAlert" class="alert alert-danger py-2 small mb-3 d-none"></div>
+
+                    <!-- Pre-fill from active row shortcut -->
+                    <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mb-3">
+                        <span class="small fw-semibold text-secondary">
+                            <i class="bi bi-magic me-1 text-primary"></i>Want to save an item from the quotation table?
+                        </span>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" id="btn-prefill-active-row" onclick="prefillNewProductFromQuotationRow()">
+                            <i class="bi bi-arrow-down-circle me-1"></i>Copy from Quotation Row
+                        </button>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label fw-semibold">Stock Item Name / Model Code <span class="text-danger">*</span></label>
+                            <input type="text" name="model_code" id="new_prod_model_code" class="form-control fw-bold font-monospace" placeholder="e.g. 1CEB120P35S3 or SDHE-0610" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Brand / Category</label>
+                            <input type="text" name="category" id="new_prod_category" class="form-control text-uppercase" placeholder="e.g. DANFOSS, EATON, GENERAL" list="brands-datalist" value="GENERAL">
+                            <datalist id="brands-datalist">
+                                {% for b in brands %}
+                                <option value="{{ b }}">{{ b }}</option>
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Detailed Description</label>
+                            <textarea name="description" id="new_prod_description" class="form-control" rows="3" placeholder="Detailed Item Description..."></textarea>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Unit Rate (₹)</label>
+                            <input type="number" step="0.01" min="0" name="unit_rate" id="new_prod_unit_rate" class="form-control" placeholder="0.00">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">Default Unit</label>
+                            <input type="text" name="unit" id="new_prod_unit" class="form-control text-uppercase" placeholder="NOS" value="NOS">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">HSN Code</label>
+                            <input type="text" name="hsn_code" id="new_prod_hsn_code" class="form-control" placeholder="84136090" value="84136090" list="hsn-code-list">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold">GST Rate (%)</label>
+                            <input type="number" step="0.01" min="0" name="gst_rate" id="new_prod_gst_rate" class="form-control" placeholder="18.00" value="18.00">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" id="btn-submit-new-product" class="btn btn-success fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Save to Master &amp; Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function prefillNewProductFromQuotationRow() {
+    const rows = document.querySelectorAll('#items-container .item-row');
+    if (!rows || rows.length === 0) return;
+    let targetRow = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        const del = r.querySelector('input[type="checkbox"][name$="-DELETE"]');
+        if (del && del.checked) continue;
+        const descInput = r.querySelector('.item-desc');
+        const rateInput = r.querySelector('.item-rate');
+        if ((descInput && descInput.value.trim()) || (rateInput && rateInput.value)) {
+            targetRow = r;
+            break;
+        }
+    }
+    if (!targetRow && rows.length > 0) targetRow = rows[0];
+    if (targetRow) {
+        const descInput = targetRow.querySelector('.item-desc');
+        const rateInput = targetRow.querySelector('.item-rate');
+        const hsnInput = targetRow.querySelector('.item-hsn');
+        const unitInput = targetRow.querySelector('.item-unit');
+        const gstInput = targetRow.querySelector('.item-gst');
+
+        const descVal = descInput ? descInput.value.trim() : '';
+        const firstLine = descVal.split('\n')[0].trim();
+        document.getElementById('new_prod_model_code').value = firstLine;
+        document.getElementById('new_prod_description').value = descVal;
+        if (rateInput && rateInput.value) {
+            document.getElementById('new_prod_unit_rate').value = rateInput.value;
+        }
+        if (hsnInput && hsnInput.value) {
+            document.getElementById('new_prod_hsn_code').value = hsnInput.value;
+        }
+        if (unitInput && unitInput.value) {
+            document.getElementById('new_prod_unit').value = unitInput.value;
+        }
+        if (gstInput && gstInput.value) {
+            document.getElementById('new_prod_gst_rate').value = gstInput.value.replace('%', '').trim();
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const addProductForm = document.getElementById('saveNewProductForm');
+    const submitBtn = document.getElementById('btn-submit-new-product');
+    const errorAlert = document.getElementById('saveNewProductErrorAlert');
+    const modalEl = document.getElementById('saveNewProductModal');
+
+    if (addProductForm) {
+        addProductForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const modelCode = (document.getElementById('new_prod_model_code').value || '').trim();
+            if (!modelCode) {
+                errorAlert.classList.remove('d-none');
+                errorAlert.textContent = 'Please enter a Stock Item Name / Model Code.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving to Master & Excel...';
+            errorAlert.classList.add('d-none');
+            errorAlert.textContent = '';
+
+            const formData = new FormData(addProductForm);
+            fetch("{% url 'product_create' %}", {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(res => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save to Master & Excel';
+
+                if (res.ok && res.data.success) {
+                    const p = res.data.product;
+                    const bsModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                    bsModal.hide();
+                    addProductForm.reset();
+
+                    alert(`Product '${p.model_code}' successfully saved to Master and 'Product List.xlsx'!`);
+                } else {
+                    let errMsg = 'Failed to save product.';
+                    if (res.data && res.data.errors) {
+                        const errParts = [];
+                        for (const k in res.data.errors) {
+                            const errArr = res.data.errors[k];
+                            errParts.push(`${k}: ${errArr.map(x => x.message || x).join(', ')}`);
+                        }
+                        errMsg = errParts.join(' | ');
+                    }
+                    errorAlert.classList.remove('d-none');
+                    errorAlert.textContent = errMsg;
+                }
+            })
+            .catch(err => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save to Master & Excel';
+                errorAlert.classList.remove('d-none');
+                errorAlert.textContent = 'Server error occurred while saving: ' + err.message;
+            });
+        });
+    }
+});
+</script>
 {% endblock %}
 

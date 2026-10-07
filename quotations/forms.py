@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django import forms
 from django.forms import inlineformset_factory
+from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
 from .models import Quotation, QuotationItem, Customer, Product, UserProfile, Proforma, ProformaItem
@@ -151,6 +152,13 @@ class UserProfileForm(forms.ModelForm):
         }
 
 class QuotationForm(forms.ModelForm):
+    quotation_date = forms.DateField(
+        required=True,
+        initial=timezone.now,
+        input_formats=['%Y-%m-%d', '%d/%m/%Y', '%d/%m/%y', '%d-%m-%Y', '%d-%m-%y', '%d.%m.%Y', '%d.%m.%y', '%m/%d/%Y', '%m/%d/%y'],
+        widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d')
+    )
+
     class Meta:
         model = Quotation
         fields = [
@@ -209,6 +217,16 @@ class QuotationForm(forms.ModelForm):
             'grand_total': forms.NumberInput(attrs={'class': 'form-control bg-light fw-bold fs-5 text-primary', 'readonly': 'readonly', 'id': 'id_grand_total'}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.utils import timezone
+        if not self.is_bound:
+            if not self.instance.pk or not self.instance.quotation_date:
+                if not self.initial.get('quotation_date'):
+                    self.initial['quotation_date'] = timezone.now().date().strftime('%Y-%m-%d')
+            elif self.instance.quotation_date:
+                self.initial['quotation_date'] = self.instance.quotation_date.strftime('%Y-%m-%d')
+
     def clean(self):
         cleaned_data = super().clean()
         from decimal import Decimal
@@ -226,6 +244,16 @@ class QuotationForm(forms.ModelForm):
 
 
 class QuotationItemForm(forms.ModelForm):
+    description = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control item-desc',
+            'rows': 2,
+            'placeholder': 'Type description (Press Enter for new line)...',
+            'autocomplete': 'off',
+            'style': 'resize: vertical; min-height: 52px;'
+        })
+    )
     unit_rate = forms.DecimalField(
         required=False,
         min_value=0,
@@ -233,6 +261,15 @@ class QuotationItemForm(forms.ModelForm):
         widget=forms.TextInput(attrs={
             'class': 'form-control item-rate text-end',
             'placeholder': '0.00',
+            'inputmode': 'decimal',
+            'autocomplete': 'off'
+        })
+    )
+    gst_rate = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control item-gst text-center',
+            'placeholder': '18',
             'inputmode': 'decimal',
             'autocomplete': 'off'
         })
@@ -245,7 +282,7 @@ class QuotationItemForm(forms.ModelForm):
         ]
         widgets = {
             'sr_no': forms.TextInput(attrs={
-                'class': 'form-control item-sr text-center fw-bold bg-light',
+                'class': 'form-control item-sr text-center fw-bold',
                 'placeholder': '1',
                 'style': 'min-width: 48px; padding-left: 2px; padding-right: 2px; font-size: 0.95rem; font-weight: bold;'
             }),
@@ -256,22 +293,22 @@ class QuotationItemForm(forms.ModelForm):
                 'autocomplete': 'off',
                 'style': 'resize: vertical; min-height: 52px;'
             }),
-            'hsn_code': forms.TextInput(attrs={'class': 'form-control item-hsn text-center', 'placeholder': 'HSN', 'list': 'hsn-code-list'}),
+            'hsn_code': forms.TextInput(attrs={
+                'class': 'form-control item-hsn text-center',
+                'placeholder': 'HSN Code',
+                'list': 'hsn-code-list',
+                'style': 'min-width: 125px; font-weight: 600; font-family: monospace; font-size: 0.95rem; letter-spacing: 0.5px;'
+            }),
             'quantity': forms.NumberInput(attrs={'class': 'form-control item-qty text-center', 'step': 'any', 'min': '0'}),
             'unit': forms.Select(attrs={'class': 'form-select item-unit'}),
-            'unit_rate': forms.TextInput(attrs={
-                'class': 'form-control item-rate text-end',
-                'placeholder': '0.00',
-                'inputmode': 'decimal',
-                'autocomplete': 'off'
-            }),
             'delivery_schedule': forms.TextInput(attrs={'class': 'form-control item-del', 'placeholder': 'EX STOCK / 6-8 WEEKS'}),
-            'gst_rate': forms.NumberInput(attrs={'class': 'form-control item-gst text-center', 'step': 'any', 'min': '0', 'placeholder': ''}),
             'amount': forms.TextInput(attrs={'class': 'form-control item-amount bg-light text-end', 'readonly': 'readonly'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if 'description' in self.fields:
+            self.fields['description'].required = False
         if not self.is_bound:
             val = self.initial.get('unit_rate')
             if not self.instance.pk:
@@ -283,11 +320,52 @@ class QuotationItemForm(forms.ModelForm):
                 elif self.instance.unit_rate is not None:
                     self.initial['unit_rate'] = f"{self.instance.unit_rate:.2f}"
 
+            gst_val = self.initial.get('gst_rate')
+            if gst_val is None and self.instance.pk and self.instance.gst_rate is not None:
+                gst_val = self.instance.gst_rate
+            if gst_val is not None:
+                try:
+                    d_gst = Decimal(str(gst_val))
+                    self.initial['gst_rate'] = f"{int(d_gst)}" if d_gst == int(d_gst) else f"{d_gst:.2f}"
+                except Exception:
+                    self.initial['gst_rate'] = str(gst_val)
+
+    def has_changed(self):
+        # Ignore completely empty new extra rows (e.g. untouched forms)
+        if not self.instance.pk:
+            has_desc = bool(self.data.get(self.add_prefix('description'), '').strip())
+            raw_qty = self.data.get(self.add_prefix('quantity'), '').strip()
+            raw_rate = self.data.get(self.add_prefix('unit_rate'), '').strip()
+            raw_hsn = self.data.get(self.add_prefix('hsn_code'), '').strip()
+            has_qty = bool(raw_qty)
+            has_rate = bool(raw_rate and raw_rate != '0' and raw_rate != '0.00')
+            if not (has_desc or has_qty or has_rate or bool(raw_hsn)):
+                return False
+        return super().has_changed()
+
+    def clean_sr_no(self):
+        val = self.cleaned_data.get('sr_no')
+        if not val or not str(val).strip():
+            return '1'
+        return str(val).strip()
+
     def clean_unit_rate(self):
         val = self.cleaned_data.get('unit_rate')
         if val is None or str(val).strip() == '':
             return Decimal('0.00')
         return val
+
+    def clean_gst_rate(self):
+        val = self.cleaned_data.get('gst_rate')
+        if val is None or str(val).strip() == '':
+            return None
+        cleaned_str = str(val).replace('%', '').strip()
+        if not cleaned_str:
+            return None
+        try:
+            return Decimal(cleaned_str)
+        except Exception:
+            raise forms.ValidationError("Enter a valid GST %.")
 
 QuotationItemFormSet = inlineformset_factory(
     Quotation,
@@ -484,6 +562,16 @@ class ProformaForm(forms.ModelForm):
 
 
 class ProformaItemForm(forms.ModelForm):
+    description = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control item-desc',
+            'rows': 2,
+            'placeholder': 'Item Description (e.g. Cartridge Valve – Part# 406AA00066A\nModel# 1CEB120P35S3)',
+            'autocomplete': 'off',
+            'style': 'resize: vertical; min-height: 52px;'
+        })
+    )
     unit_rate = forms.DecimalField(
         required=False,
         min_value=0,
@@ -521,6 +609,8 @@ class ProformaItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if 'description' in self.fields:
+            self.fields['description'].required = False
         if 'amount' in self.fields:
             self.fields['amount'].required = False
         if not self.is_bound:
@@ -535,10 +625,15 @@ class ProformaItemForm(forms.ModelForm):
                     self.initial['unit_rate'] = f"{self.instance.unit_rate:.2f}"
 
     def has_changed(self):
-        # Ignore blank extra rows added dynamically or with empty description
-        has_desc = bool(self.data.get(self.add_prefix('description'), '').strip())
-        if not self.instance.pk and not has_desc:
-            return False
+        # Ignore completely empty new extra rows
+        if not self.instance.pk:
+            has_desc = bool(self.data.get(self.add_prefix('description'), '').strip())
+            raw_qty = self.data.get(self.add_prefix('quantity'), '').strip()
+            raw_rate = self.data.get(self.add_prefix('unit_rate'), '').strip()
+            has_qty = bool(raw_qty)
+            has_rate = bool(raw_rate and raw_rate != '0' and raw_rate != '0.00')
+            if not (has_desc or has_qty or has_rate):
+                return False
         return super().has_changed()
 
     def clean_unit_rate(self):
